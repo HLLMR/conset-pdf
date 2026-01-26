@@ -1,0 +1,14 @@
+# Large Binary Files
+# Store PDF fixtures using Git LFS
+*.pdf
+
+# Compiled test artifacts
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Temporary test output
+*.log
+test_output/
+extraction_results/

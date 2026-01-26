@@ -1,0 +1,15 @@
+# Git LFS Configuration for PDF Test Fixtures
+# 
+# PDF files are stored using Git LFS to keep repository size manageable.
+# Ensure you have git-lfs installed: https://git-lfs.github.com/
+
+# Exclude all PDF files from standard git tracking
+*.pdf filter=lfs diff=lfs merge=lfs -text
+
+# Exclude metadata files if they reference binary content
+*.bin filter=lfs diff=lfs merge=lfs -text
+
+# But do track metadata JSON and documentation
+!*.metadata.json
+!*.md
+!INVENTORY.md
