@@ -15,3 +15,5 @@ anyhow.workspace = true
 thiserror.workspace = true
 conset-pdf-ir = { workspace = true }
 serde = { workspace = true }
+pdfium-render = { version = "0.8", features = ["image"] }
+image = "0.25"
