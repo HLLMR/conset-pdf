@@ -1,11 +1,15 @@
 [package]
-name = "conset-pdf"
+name = "conset-pdf-engine"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "Core PDF processing engine for Conset PDF"
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
+conset-pdf-ir = { workspace = true }
 log.workspace = true
 env_logger.workspace = true
