@@ -16,6 +16,7 @@ pub struct Document {
 
 impl Document {
     /// Creates a new document handle.
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }
@@ -43,6 +44,7 @@ impl PageData {
     /// # Arguments
     ///
     /// * `page_index` - The zero-based page index
+    #[must_use]
     pub fn new(page_index: usize) -> Self {
         Self { page_index }
     }

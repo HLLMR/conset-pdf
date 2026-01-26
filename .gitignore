@@ -1,25 +1,42 @@
-# Rust
+# Rust build artifacts
 /target/
-Cargo.lock
 **/*.rs.bk
+debug.log
 
-# IDE
+# PDF test fixtures (managed by Git LFS)
+*.pdf
+!tests/fixtures/*.pdf
+
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Output
-/output/
+# Debug output and overlay images
 /debug/
+overlay_images/
+*.png
+*.jpg
+
+# OS-specific
+Thumbs.db
+Desktop.ini
+
+# Output directories
+/output/
 /tmp/
-*.pdf
-!tests/fixtures/*.pdf
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Test output
+test_output/
+extraction_results/
 
 # Logs
 *.log

@@ -22,6 +22,10 @@ pub trait PdfExtractor {
     /// # Returns
     ///
     /// A handle to the loaded document, or an error if loading fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the PDF cannot be opened or parsed.
     fn load_document(&self, path: &str) -> Result<Document>;
 
     /// Gets the total number of pages in a document.
@@ -45,5 +49,9 @@ pub trait PdfExtractor {
     /// # Returns
     ///
     /// Extracted page data, or an error if extraction fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the page cannot be read or decoded.
     fn extract_page(&self, doc: &Document, page_index: usize) -> Result<PageData>;
 }

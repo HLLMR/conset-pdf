@@ -17,6 +17,10 @@ use std::path::Path;
 /// # Returns
 ///
 /// Ok if successful, or an error if I/O or serialization fails
+///
+/// # Errors
+///
+/// Returns an error if the bundle cannot be serialized or written to disk.
 pub fn write_bundle_json(bundle: &AuditBundle, path: impl AsRef<Path>) -> Result<()> {
     let json = serde_json::to_string_pretty(bundle)?;
     std::fs::write(path, json)?;
@@ -32,6 +36,10 @@ pub fn write_bundle_json(bundle: &AuditBundle, path: impl AsRef<Path>) -> Result
 /// # Returns
 ///
 /// The deserialized bundle, or an error if I/O or deserialization fails
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or parsed as JSON.
 pub fn read_bundle_json(path: impl AsRef<Path>) -> Result<AuditBundle, anyhow::Error> {
     let json = std::fs::read_to_string(path)?;
     let bundle = serde_json::from_str(&json)?;
@@ -47,6 +55,10 @@ pub fn read_bundle_json(path: impl AsRef<Path>) -> Result<AuditBundle, anyhow::E
 /// # Returns
 ///
 /// JSON string representation of the bundle
+///
+/// # Errors
+///
+/// Returns an error if serialization fails.
 pub fn serialize_bundle_json(bundle: &AuditBundle) -> Result<String> {
     Ok(serde_json::to_string_pretty(bundle)?)
 }
@@ -60,6 +72,10 @@ pub fn serialize_bundle_json(bundle: &AuditBundle) -> Result<String> {
 /// # Returns
 ///
 /// The deserialized bundle
+///
+/// # Errors
+///
+/// Returns an error if the JSON cannot be parsed.
 pub fn deserialize_bundle_json(json: &str) -> Result<AuditBundle, anyhow::Error> {
     Ok(serde_json::from_str(json)?)
 }

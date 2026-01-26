@@ -1,0 +1,17 @@
+# Rustfmt configuration for Conset PDF
+# See: https://rust-lang.github.io/rustfmt/
+# Using only stable features for compatibility
+
+# Code style
+max_width = 100
+edition = "2021"
+use_small_heuristics = "Max"
+
+# Formatting preferences
+newline_style = "Unix"
+remove_nested_parens = true
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Function signatures
+fn_params_layout = "Tall"

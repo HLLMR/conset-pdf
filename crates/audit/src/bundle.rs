@@ -19,10 +19,9 @@ pub struct AuditBundle {
 
 impl AuditBundle {
     /// Creates a new, empty audit bundle.
+    #[must_use]
     pub fn new() -> Self {
-        Self {
-            events: Vec::new(),
-        }
+        Self { events: Vec::new() }
     }
 
     /// Adds an event to the bundle.
@@ -44,6 +43,7 @@ impl AuditBundle {
     }
 
     /// Returns the number of events in the bundle.
+    #[must_use]
     pub fn event_count(&self) -> usize {
         self.events.len()
     }

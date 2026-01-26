@@ -1,0 +1,17 @@
+# Clippy configuration for Conset PDF
+# See: https://doc.rust-lang.org/clippy/
+
+# Disallow unwrap() and expect() methods (enforced via disallowed-methods)
+disallowed-methods = [
+    { path = "std::option::Option::unwrap", reason = "use proper error handling instead" },
+    { path = "std::option::Option::expect", reason = "use proper error handling instead" },
+    { path = "std::result::Result::unwrap", reason = "use proper error handling instead" },
+    { path = "std::result::Result::expect", reason = "use proper error handling instead" },
+]
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 15
+
+# Allow unwrap/expect only in tests
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

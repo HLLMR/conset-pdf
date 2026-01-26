@@ -14,6 +14,12 @@ rust-version = "1.82"
 license = "Apache-2.0"
 authors = ["HLLMR LLC"]
 
+[workspace.lints.clippy]
+# Enable pedantic warnings
+pedantic = { level = "warn", priority = -1 }
+# Allow certain pedantic lints that conflict with our architecture
+module_name_repetitions = "allow"
+
 [workspace.dependencies]
 # Common dependencies (versions defined once)
 anyhow = "1.0"

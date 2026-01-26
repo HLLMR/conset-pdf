@@ -28,14 +28,10 @@ impl AuditEvent {
     ///
     /// # Arguments
     ///
-    /// * `event_type` - Classification of the event (e.g., "extraction_started")
+    /// * `event_type` - Classification of the event (e.g., `extraction_started`)
     /// * `metadata` - JSON object containing event-specific data
     pub fn new(event_type: impl Into<String>, metadata: Value) -> Self {
-        Self {
-            timestamp: Utc::now(),
-            event_type: event_type.into(),
-            metadata,
-        }
+        Self { timestamp: Utc::now(), event_type: event_type.into(), metadata }
     }
 
     /// Creates an event with a specific timestamp.
@@ -50,11 +46,7 @@ impl AuditEvent {
         event_type: impl Into<String>,
         metadata: Value,
     ) -> Self {
-        Self {
-            timestamp,
-            event_type: event_type.into(),
-            metadata,
-        }
+        Self { timestamp, event_type: event_type.into(), metadata }
     }
 }
 

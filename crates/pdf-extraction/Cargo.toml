@@ -7,6 +7,9 @@ license.workspace = true
 authors.workspace = true
 description = "PDF extraction wrapper for Conset PDF"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true

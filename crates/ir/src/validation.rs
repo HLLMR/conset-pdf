@@ -11,6 +11,10 @@ pub struct Validator;
 impl Validator {
     /// Validates a layout transcript.
     ///
+    /// # Errors
+    ///
+    /// Returns an error message when validation fails.
+    ///
     /// # Returns
     ///
     /// Returns `Ok(())` if the transcript is valid, or an error message if validation fails.

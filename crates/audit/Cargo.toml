@@ -7,6 +7,9 @@ license.workspace = true
 authors.workspace = true
 description = "Audit trail generation for Conset PDF"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true

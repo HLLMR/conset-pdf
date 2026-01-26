@@ -11,6 +11,7 @@ pub struct Extractor;
 
 impl Extractor {
     /// Creates a new extractor.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -24,6 +25,10 @@ impl Extractor {
     /// # Returns
     ///
     /// A `LayoutTranscript` containing the extracted content
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading or parsing the PDF fails.
     pub fn extract(&self, _path: &str) -> Result<LayoutTranscript> {
         // Extraction logic to be implemented
         Ok(LayoutTranscript::new())

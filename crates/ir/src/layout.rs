@@ -17,6 +17,7 @@ pub struct LayoutTranscript {
 
 impl LayoutTranscript {
     /// Creates a new, empty layout transcript.
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }

@@ -7,6 +7,9 @@ license.workspace = true
 authors.workspace = true
 description = "Core PDF processing engine for Conset PDF"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true

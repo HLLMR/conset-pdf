@@ -11,6 +11,7 @@ pub struct Processor;
 
 impl Processor {
     /// Creates a new processor.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -24,6 +25,10 @@ impl Processor {
     /// # Returns
     ///
     /// The processed layout transcript
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if processing or validation fails.
     pub fn process(&self, transcript: LayoutTranscript) -> Result<LayoutTranscript> {
         // Processing logic to be implemented
         Ok(transcript)
