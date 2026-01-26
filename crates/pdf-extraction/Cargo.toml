@@ -2,8 +2,13 @@
 name = "conset-pdf-extraction"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "PDF extraction wrapper for Conset PDF"
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
+conset-pdf-ir = { workspace = true }
+serde = { workspace = true }
