@@ -3,7 +3,8 @@
 //! This module provides validation rules and constraint checking for IR types
 //! to ensure the integrity and validity of extracted PDF data.
 
-use crate::{BBox, BoundingBox, Page, Span};
+use crate::{BBox, BoundingBox, BBoxError, LayoutTranscript, Page, Span, SpanError};
+use crate::layout::PageError;
 use std::cmp::Ordering;
 use std::fmt;
 
@@ -195,5 +196,180 @@ pub fn sort_spans(spans: &mut [Span]) {
             y_cmp
         }
     });
+}
+
+/// Error types for transcript validation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValidationError {
+    /// The transcript contains no pages.
+    EmptyTranscript,
+    /// Page indices are not contiguous starting at 0.
+    NonContiguousPages { expected: usize, found: usize },
+    /// A page is invalid.
+    InvalidPage { page_index: usize, error: PageError },
+    /// A span is invalid.
+    InvalidSpan { page_index: usize, span_index: usize, error: SpanError },
+    /// A bounding box is invalid.
+    InvalidBBox { page_index: usize, span_index: usize, error: BBoxError },
+    /// Spans within a page are not sorted.
+    UnsortedSpans { page_index: usize },
+}
+
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValidationError::EmptyTranscript => {
+                write!(f, "Transcript contains no pages")
+            }
+            ValidationError::NonContiguousPages { expected, found } => {
+                write!(
+                    f,
+                    "Pages not contiguous: expected index {}, found {}",
+                    expected, found
+                )
+            }
+            ValidationError::InvalidPage { page_index, error } => {
+                write!(f, "Page {}: invalid page ({:?})", page_index, error)
+            }
+            ValidationError::InvalidSpan { page_index, span_index, error } => {
+                write!(f, "Page {}: span {} has invalid content ({})", page_index, span_index, error)
+            }
+            ValidationError::InvalidBBox { page_index, span_index, error } => {
+                write!(f, "Page {}: span {} has out-of-bounds bbox ({})", page_index, span_index, error)
+            }
+            ValidationError::UnsortedSpans { page_index } => {
+                write!(f, "Page {}: spans are not sorted by (y, x) order", page_index)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ValidationError {}
+
+/// Validates a LayoutTranscript for structural and content integrity.
+///
+/// Per TRANSCRIPT_ARCHITECTURE V4.2, this function checks:
+/// - Transcript has at least 1 page
+/// - Page indices are contiguous (0, 1, 2, ...)
+/// - Each page has positive dimensions
+/// - Each page's spans are sorted by (y, x)
+/// - Each span has non-empty text and valid font size
+/// - Each bounding box is valid (all coords in [0.0, 1.0])
+///
+/// # Arguments
+///
+/// * `transcript` - The transcript to validate
+///
+/// # Returns
+///
+/// Returns `Ok(())` if all validation checks pass, or a descriptive `ValidationError` otherwise.
+///
+/// # Example
+///
+/// ```
+/// use conset_pdf_ir::{BBox, Page, Span, LayoutTranscript, TranscriptMetadata, validation};
+///
+/// let metadata = TranscriptMetadata::new("test.pdf", 1).unwrap();
+/// let mut page = Page::new(0, 100.0, 100.0).unwrap();
+/// let span = Span::new("Test", BBox::new(0.1, 0.1, 0.2, 0.05).unwrap(), 12.0).unwrap();
+/// page.add_span(span).unwrap();
+/// let transcript = LayoutTranscript::new(vec![page], metadata).unwrap();
+///
+/// let result = validation::validate_transcript(&transcript);
+/// assert!(result.is_ok());
+/// ```
+pub fn validate_transcript(transcript: &LayoutTranscript) -> Result<(), ValidationError> {
+    // Check if transcript is empty
+    if transcript.page_count() == 0 {
+        return Err(ValidationError::EmptyTranscript);
+    }
+
+    let mut _total_spans = 0;
+
+    // Validate each page
+    for (position, page) in transcript.pages().iter().enumerate() {
+        let page_index = page.page_index();
+
+        // Check contiguous indices
+        if page_index != position {
+            return Err(ValidationError::NonContiguousPages {
+                expected: position,
+                found: page_index,
+            });
+        }
+
+        // Check page dimensions
+        if page.width_pts <= 0.0 || page.height_pts <= 0.0 {
+            return Err(ValidationError::InvalidPage {
+                page_index,
+                error: PageError::ZeroDimension,
+            });
+        }
+
+        // Validate spans
+        let spans = page.spans();
+        _total_spans += spans.len();
+
+        // Check if spans are sorted by (y, x)
+        for i in 1..spans.len() {
+            let prev = &spans[i - 1];
+            let curr = &spans[i];
+
+            let y_cmp = f64_cmp_with_epsilon(prev.bbox.y, curr.bbox.y);
+            let is_sorted = match y_cmp {
+                Ordering::Less => true,
+                Ordering::Equal => prev.bbox.x <= curr.bbox.x,
+                Ordering::Greater => false,
+            };
+
+            if !is_sorted {
+                return Err(ValidationError::UnsortedSpans { page_index });
+            }
+        }
+
+        // Validate each span
+        for (span_index, span) in spans.iter().enumerate() {
+            // Check text is non-empty
+            if span.text.trim().is_empty() {
+                return Err(ValidationError::InvalidSpan {
+                    page_index,
+                    span_index,
+                    error: SpanError::EmptyText,
+                });
+            }
+
+            // Check font size is positive
+            if span.font_size <= 0.0 {
+                return Err(ValidationError::InvalidSpan {
+                    page_index,
+                    span_index,
+                    error: SpanError::InvalidFontSize,
+                });
+            }
+
+            // Check bounding box coordinates are valid
+            let bbox = &span.bbox;
+            if bbox.x < 0.0
+                || bbox.y < 0.0
+                || bbox.width < 0.0
+                || bbox.height < 0.0
+                || bbox.x > 1.0
+                || bbox.y > 1.0
+                || bbox.x + bbox.width > 1.0
+                || bbox.y + bbox.height > 1.0
+            {
+                return Err(ValidationError::InvalidBBox {
+                    page_index,
+                    span_index,
+                    error: BBoxError::OutOfBounds,
+                });
+            }
+        }
+    }
+
+    // Debug logging (would use log crate when available)
+    // log::debug!("Validated transcript: {} pages, {} total spans", transcript.page_count(), total_spans);
+
+    Ok(())
 }
 
