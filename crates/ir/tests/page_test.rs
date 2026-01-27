@@ -1,3 +1,7 @@
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::float_cmp)]
+
 //! Tests for Page validation and span ordering.
 
 use conset_pdf_ir::types::{BBox, Page, PageError, Span};
@@ -37,24 +41,12 @@ fn test_page_rejects_zero_height() {
 fn test_page_sorts_spans_by_y_then_x() {
     let mut page = Page::new(0, 612.0, 792.0).expect("valid page dimensions should construct");
 
-    let span_second = Span::new(
-        "second",
-        BBox::new(0.3, 0.5, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
-    let span_first = Span::new(
-        "first",
-        BBox::new(0.8, 0.2, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
-    let span_third = Span::new(
-        "third",
-        BBox::new(0.1, 0.5, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
+    let span_second = Span::new("second", BBox::new(0.3, 0.5, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
+    let span_first = Span::new("first", BBox::new(0.8, 0.2, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
+    let span_third = Span::new("third", BBox::new(0.1, 0.5, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
 
     page.add_span(span_second).expect("span insert should succeed");
     page.add_span(span_first).expect("span insert should succeed");
@@ -74,27 +66,15 @@ fn test_page_sorts_spans_by_y_then_x() {
 fn test_page_maintains_sort_after_add() {
     let mut page = Page::new(0, 612.0, 792.0).expect("valid page dimensions should construct");
 
-    let lower = Span::new(
-        "lower",
-        BBox::new(0.1, 0.1, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
-    let higher = Span::new(
-        "higher",
-        BBox::new(0.2, 0.5, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
+    let lower = Span::new("lower", BBox::new(0.1, 0.1, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
+    let higher = Span::new("higher", BBox::new(0.2, 0.5, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
     page.add_span(lower.clone()).expect("span insert should succeed");
     page.add_span(higher.clone()).expect("span insert should succeed");
 
-    let middle = Span::new(
-        "middle",
-        BBox::new(0.2, 0.3, 0.1, 0.1).expect("valid bbox"),
-        10.0,
-    )
-    .expect("valid span");
+    let middle = Span::new("middle", BBox::new(0.2, 0.3, 0.1, 0.1).expect("valid bbox"), 10.0)
+        .expect("valid span");
     page.add_span(middle.clone()).expect("span insert should succeed");
 
     let spans = page.spans();

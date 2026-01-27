@@ -1,9 +1,12 @@
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+
 // Integration tests for PDF page count functionality
 //
 // These tests verify that page counting works correctly with real PDF files.
 // Tests use the real PdfiumExtractor implementation - no mocks or test doubles.
 
-use conset_pdf_extraction::{PdfiumExtractor, PdfExtractor};
+use conset_pdf_extraction::{PdfExtractor, PdfiumExtractor};
 use std::path::PathBuf;
 
 // Get workspace root - tests run from workspace root
@@ -78,7 +81,7 @@ fn test_page_count_handles_multi_page_pdf() {
 fn test_page_count_is_consistent_on_reload() {
     let extractor = PdfiumExtractor::new();
     let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
-    
+
     // Load the same PDF twice
     let result1 = extractor.load_document(&path);
     assert!(result1.is_ok(), "First load failed: {:?}", result1);

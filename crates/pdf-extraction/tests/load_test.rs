@@ -1,11 +1,14 @@
-//! Document loading tests for PdfiumExtractor
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+
+//! Document loading tests for `PdfiumExtractor`
 //!
-//! These tests verify PDF document loading behavior using the real PdfiumExtractor.
+//! These tests verify PDF document loading behavior using the real `PdfiumExtractor`.
 //! Tests use actual PDF files from the test fixtures - no mocks or test doubles.
 //!
-//! Run with: cargo test -p conset-pdf-extraction --test load_test -- --test-threads=1
+//! Run with: cargo test -p conset-pdf-extraction --test `load_test` -- --test-threads=1
 
-use conset_pdf_extraction::{PdfiumExtractor, PdfExtractor, ExtractionError};
+use conset_pdf_extraction::{ExtractionError, PdfExtractor, PdfiumExtractor};
 use std::path::PathBuf;
 
 // Get workspace root - tests run from workspace root
@@ -90,9 +93,5 @@ fn test_load_document_provides_page_access() {
     let doc = result.unwrap();
     let page_count = extractor.get_page_count(&doc);
 
-    assert!(
-        page_count > 0,
-        "Document should have at least one page, got: {}",
-        page_count
-    );
+    assert!(page_count > 0, "Document should have at least one page, got: {}", page_count);
 }

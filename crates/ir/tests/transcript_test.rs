@@ -1,4 +1,8 @@
-//! Tests for LayoutTranscript construction and validation.
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::similar_names)]
+
+//! Tests for `LayoutTranscript` construction and validation.
 
 use conset_pdf_ir::types::Page;
 use conset_pdf_ir::LayoutTranscript;
@@ -21,11 +25,7 @@ fn test_transcript_accepts_valid_pages() {
     let transcript = result.unwrap();
 
     // Assert page count is 3
-    assert_eq!(
-        transcript.page_count(),
-        3,
-        "Transcript should have exactly 3 pages"
-    );
+    assert_eq!(transcript.page_count(), 3, "Transcript should have exactly 3 pages");
 }
 
 #[test]
@@ -37,10 +37,7 @@ fn test_transcript_rejects_empty_pages() {
     // Assert Result is Err(TranscriptError::EmptyTranscript)
     match result {
         Err(conset_pdf_ir::TranscriptError::EmptyTranscript) => {}
-        other => panic!(
-            "Expected TranscriptError::EmptyTranscript, got: {:?}",
-            other
-        ),
+        other => panic!("Expected TranscriptError::EmptyTranscript, got: {:?}", other),
     }
 }
 
@@ -58,10 +55,7 @@ fn test_transcript_rejects_noncontiguous_indices() {
     // Assert Result is Err(TranscriptError::NonContiguousPages)
     match result {
         Err(conset_pdf_ir::TranscriptError::NonContiguousPages { expected: _, found: _ }) => {}
-        other => panic!(
-            "Expected TranscriptError::NonContiguousPages, got: {:?}",
-            other
-        ),
+        other => panic!("Expected TranscriptError::NonContiguousPages, got: {:?}", other),
     }
 }
 
@@ -79,10 +73,7 @@ fn test_transcript_rejects_duplicate_indices() {
     // Assert Result is Err(TranscriptError::DuplicatePageIndex)
     match result {
         Err(conset_pdf_ir::TranscriptError::DuplicatePageIndex(_)) => {}
-        other => panic!(
-            "Expected TranscriptError::DuplicatePageIndex, got: {:?}",
-            other
-        ),
+        other => panic!("Expected TranscriptError::DuplicatePageIndex, got: {:?}", other),
     }
 }
 
@@ -104,10 +95,7 @@ fn test_transcript_serializes_to_json() {
 
     // Assert JSON string is non-empty
     let json = result.unwrap();
-    assert!(
-        !json.is_empty(),
-        "Serialized JSON should not be empty string"
-    );
+    assert!(!json.is_empty(), "Serialized JSON should not be empty string");
 }
 
 #[test]
@@ -132,8 +120,5 @@ fn test_transcript_deserializes_from_json() {
     let deserialized = result.unwrap();
 
     // Assert deserialized == original (round-trip)
-    assert_eq!(
-        deserialized, original,
-        "Deserialized transcript should equal original"
-    );
+    assert_eq!(deserialized, original, "Deserialized transcript should equal original");
 }

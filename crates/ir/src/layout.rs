@@ -63,18 +63,17 @@ impl fmt::Display for TranscriptError {
             TranscriptError::NonContiguousPages { expected, found } => {
                 write!(
                     f,
-                    "Page indices are not contiguous: expected index {}, found {}",
-                    expected, found
+                    "Page indices are not contiguous: expected index {expected}, found {found}"
                 )
             }
             TranscriptError::DuplicatePageIndex(idx) => {
-                write!(f, "Duplicate page index: {}", idx)
+                write!(f, "Duplicate page index: {idx}")
             }
             TranscriptError::InvalidPage(err) => {
-                write!(f, "Invalid page: {:?}", err)
+                write!(f, "Invalid page: {err:?}")
             }
             TranscriptError::SerializationError(msg) => {
-                write!(f, "Serialization error: {}", msg)
+                write!(f, "Serialization error: {msg}")
             }
         }
     }
@@ -100,6 +99,11 @@ pub struct Page {
 
 impl Page {
     /// Creates a new page with the given dimensions.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PageError::NegativeDimension` if width or height is negative.
+    /// Returns `PageError::ZeroDimension` if width or height is zero.
     pub fn new(page_index: usize, width_pts: f64, height_pts: f64) -> Result<Self, PageError> {
         if width_pts < 0.0 || height_pts < 0.0 {
             return Err(PageError::NegativeDimension);
@@ -109,15 +113,14 @@ impl Page {
             return Err(PageError::ZeroDimension);
         }
 
-        Ok(Self {
-            page_index,
-            width_pts,
-            height_pts,
-            spans: Vec::new(),
-        })
+        Ok(Self { page_index, width_pts, height_pts, spans: Vec::new() })
     }
 
     /// Adds a span and re-sorts the collection to maintain ordering invariants.
+    ///
+    /// # Errors
+    ///
+    /// Currently always returns `Ok(())`. Signature returns `Result` for future extensibility.
     pub fn add_span(&mut self, span: Span) -> Result<(), PageError> {
         self.spans.push(span);
         self.sort_spans();
@@ -137,21 +140,25 @@ impl Page {
     }
 
     /// Returns the page width in points.
+    #[must_use]
     pub fn width(&self) -> f64 {
         self.width_pts
     }
 
     /// Returns the page height in points.
+    #[must_use]
     pub fn height(&self) -> f64 {
         self.height_pts
     }
 
     /// Returns the spans in their current sorted order.
+    #[must_use]
     pub fn spans(&self) -> &[Span] {
         &self.spans
     }
 
     /// Returns the page index.
+    #[must_use]
     pub fn page_index(&self) -> usize {
         self.page_index
     }
@@ -180,7 +187,7 @@ impl TranscriptMetadata {
     ///
     /// # Errors
     ///
-    /// Returns `MetadataError::EmptySourcePath` if source_path is empty or whitespace-only.
+    /// Returns `MetadataError::EmptySourcePath` if `source_path` is empty or whitespace-only.
     pub fn new(source_path: &str, pdf_page_count: usize) -> Result<Self, MetadataError> {
         // Validate source_path
         if source_path.trim().is_empty() {
@@ -219,11 +226,11 @@ impl TranscriptMetadata {
 /// extracted from a PDF document, including page layouts, text elements, and their
 /// spatial relationships.
 ///
-/// Per TRANSCRIPT_ARCHITECTURE V4.2, pages are ordered by page_index and must
+/// Per `TRANSCRIPT_ARCHITECTURE` V4.2, pages are ordered by `page_index` and must
 /// form a contiguous sequence starting at 0.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayoutTranscript {
-    /// Pages ordered by page_index (must be contiguous starting at 0).
+    /// Pages ordered by `page_index` (must be contiguous starting at 0).
     pages: Vec<Page>,
     /// Metadata about the transcript and extraction.
     metadata: TranscriptMetadata,
@@ -261,17 +268,14 @@ impl LayoutTranscript {
 
             // Check for contiguous sequence starting at 0
             if idx != position {
-                return Err(TranscriptError::NonContiguousPages {
-                    expected: position,
-                    found: idx,
-                });
+                return Err(TranscriptError::NonContiguousPages { expected: position, found: idx });
             }
         }
 
         Ok(Self { pages, metadata })
     }
 
-    /// Creates a LayoutTranscript from a vector of pages.
+    /// Creates a `LayoutTranscript` from a vector of pages.
     ///
     /// Creates default metadata with a placeholder path and performs full validation.
     ///
@@ -280,7 +284,7 @@ impl LayoutTranscript {
     /// Returns `TranscriptError` if pages fail validation or metadata creation fails.
     pub fn from_pages(pages: Vec<Page>) -> Result<Self, TranscriptError> {
         let metadata = TranscriptMetadata::new("<unknown>", 0)
-            .map_err(|e| TranscriptError::SerializationError(format!("Metadata error: {}", e)))?;
+            .map_err(|e| TranscriptError::SerializationError(format!("Metadata error: {e}")))?;
         Self::new(pages, metadata)
     }
 
@@ -328,10 +332,7 @@ impl LayoutTranscript {
             }
 
             if idx != position {
-                return Err(TranscriptError::NonContiguousPages {
-                    expected: position,
-                    found: idx,
-                });
+                return Err(TranscriptError::NonContiguousPages { expected: position, found: idx });
             }
         }
 
@@ -339,16 +340,19 @@ impl LayoutTranscript {
     }
 
     /// Returns the number of pages in the transcript.
+    #[must_use]
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }
 
     /// Returns a reference to the pages.
+    #[must_use]
     pub fn pages(&self) -> &[Page] {
         &self.pages
     }
 
     /// Returns a reference to the metadata.
+    #[must_use]
     pub fn metadata(&self) -> &TranscriptMetadata {
         &self.metadata
     }
@@ -360,7 +364,7 @@ impl LayoutTranscript {
     /// Returns `TranscriptError::SerializationError` if serialization fails.
     pub fn to_json(&self) -> Result<String, TranscriptError> {
         serde_json::to_string(self).map_err(|e| {
-            TranscriptError::SerializationError(format!("Failed to serialize transcript: {}", e))
+            TranscriptError::SerializationError(format!("Failed to serialize transcript: {e}"))
         })
     }
 
@@ -372,7 +376,7 @@ impl LayoutTranscript {
     /// or validation fails on the deserialized transcript.
     pub fn from_json(json: &str) -> Result<Self, TranscriptError> {
         let transcript = serde_json::from_str::<Self>(json).map_err(|e| {
-            TranscriptError::SerializationError(format!("Failed to deserialize transcript: {}", e))
+            TranscriptError::SerializationError(format!("Failed to deserialize transcript: {e}"))
         })?;
 
         // Validate the deserialized transcript
@@ -388,11 +392,9 @@ impl Default for LayoutTranscript {
     /// Note: This will panic if you try to validate it, as it contains no pages.
     /// Use `new()` or `from_pages()` to create a valid transcript.
     fn default() -> Self {
+        // This unwrap is safe because "<default>" is a valid non-empty source path
         let metadata = TranscriptMetadata::new("<default>", 0)
-            .expect("<default> should never be considered empty");
-        Self {
-            pages: Vec::new(),
-            metadata,
-        }
+            .unwrap_or_else(|_| unreachable!("<default> is a valid source path"));
+        Self { pages: Vec::new(), metadata }
     }
 }

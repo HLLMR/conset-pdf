@@ -1,9 +1,13 @@
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::len_zero)]
+
 // Integration tests for PDF text extraction functionality
 //
 // These tests verify that text extraction works correctly with real PDF files.
 // Tests use the real PdfiumExtractor implementation - no mocks or test doubles.
 
-use conset_pdf_extraction::{PdfiumExtractor, PdfExtractor, ExtractionError};
+use conset_pdf_extraction::{ExtractionError, PdfExtractor, PdfiumExtractor};
 use std::path::PathBuf;
 
 // Get workspace root - tests run from workspace root
@@ -47,8 +51,10 @@ fn test_extract_text_contains_expected_content() {
     // Just verify we got some text - actual content varies by PDF
     assert!(text.len() > 0, "Extracted text should not be empty");
     // Verify text contains common document elements
-    assert!(text.contains("Page") || text.contains("page") || text.len() > 100, 
-            "Extracted text should contain recognizable content");
+    assert!(
+        text.contains("Page") || text.contains("page") || text.len() > 100,
+        "Extracted text should contain recognizable content"
+    );
 }
 
 #[test]
@@ -66,14 +72,20 @@ fn test_extract_text_rejects_invalid_page_index() {
     let text_result = extractor.extract_text(&doc, invalid_page_index);
 
     // Should return an error for invalid page index
-    assert!(text_result.is_err(), 
-            "Should return an error for page index {} when document has {} pages",
-            invalid_page_index, page_count);
+    assert!(
+        text_result.is_err(),
+        "Should return an error for page index {} when document has {} pages",
+        invalid_page_index,
+        page_count
+    );
 
     // The error should be PageNotFound
     let error = text_result.unwrap_err();
-    assert!(matches!(error, ExtractionError::PageNotFound(_)),
-            "Error should be PageNotFound variant, got: {:?}", error);
+    assert!(
+        matches!(error, ExtractionError::PageNotFound(_)),
+        "Error should be PageNotFound variant, got: {:?}",
+        error
+    );
 }
 
 #[test]
@@ -127,14 +139,16 @@ fn test_extract_text_handles_empty_page() {
     if page_count > 1 {
         let last_page_index = page_count - 1;
         let text_result = extractor.extract_text(&doc, last_page_index);
-        
+
         // Should return Ok, even if the page is blank/empty
-        assert!(text_result.is_ok(), 
-                "Should handle pages with little/no content: {:?}", text_result);
+        assert!(
+            text_result.is_ok(),
+            "Should handle pages with little/no content: {:?}",
+            text_result
+        );
     } else {
         // If only single page, just verify page 0 can be extracted
         let text_result = extractor.extract_text(&doc, 0);
-        assert!(text_result.is_ok(), 
-                "Should handle page extraction: {:?}", text_result);
+        assert!(text_result.is_ok(), "Should handle page extraction: {:?}", text_result);
     }
 }

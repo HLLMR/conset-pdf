@@ -1,3 +1,10 @@
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::unreadable_literal)]
+
 use conset_pdf_ir::{BBox, Page, Span};
 
 const EPSILON: f64 = 1e-6;
@@ -89,14 +96,7 @@ fn test_sort_spans_handles_mixed_positions() {
 /// Test that span sorting is deterministic across multiple iterations.
 #[test]
 fn test_sort_spans_is_deterministic() {
-    let span_configs = vec![
-        (0.3, 0.5),
-        (0.8, 0.2),
-        (0.1, 0.5),
-        (0.5, 0.9),
-        (0.4, 0.3),
-        (0.7, 0.6),
-    ];
+    let span_configs = vec![(0.3, 0.5), (0.8, 0.2), (0.1, 0.5), (0.5, 0.9), (0.4, 0.3), (0.7, 0.6)];
 
     let mut results = Vec::new();
 
@@ -111,22 +111,15 @@ fn test_sort_spans_is_deterministic() {
             page.add_span(span).unwrap();
         }
 
-        let sorted_coords: Vec<(f64, f64)> = page
-            .spans()
-            .iter()
-            .map(|s| (s.bbox.y, s.bbox.x))
-            .collect();
+        let sorted_coords: Vec<(f64, f64)> =
+            page.spans().iter().map(|s| (s.bbox.y, s.bbox.x)).collect();
 
         results.push(sorted_coords);
     }
 
     // Assert all results are identical
     for i in 1..results.len() {
-        assert_eq!(
-            results[0], results[i],
-            "Sort result {} differs from first result",
-            i
-        );
+        assert_eq!(results[0], results[i], "Sort result {} differs from first result", i);
     }
 }
 
@@ -149,18 +142,8 @@ fn test_sort_spans_uses_epsilon_comparison() {
 
     // Create spans at y positions within epsilon
     // These should be treated as equal y and sorted by x
-    let span1 = Span::new(
-        "span1",
-        BBox::new(0.7, 0.5000001, 0.1, 0.05).unwrap(),
-        12.0,
-    )
-    .unwrap();
-    let span2 = Span::new(
-        "span2",
-        BBox::new(0.2, 0.4999999, 0.1, 0.05).unwrap(),
-        12.0,
-    )
-    .unwrap();
+    let span1 = Span::new("span1", BBox::new(0.7, 0.5000001, 0.1, 0.05).unwrap(), 12.0).unwrap();
+    let span2 = Span::new("span2", BBox::new(0.2, 0.4999999, 0.1, 0.05).unwrap(), 12.0).unwrap();
 
     page.add_span(span1).unwrap();
     page.add_span(span2).unwrap();

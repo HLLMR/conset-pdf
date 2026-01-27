@@ -39,6 +39,7 @@ pub enum ExtractionError {
 
 impl ExtractionError {
     /// Creates a new page not found error.
+    #[must_use]
     pub fn page_not_found(index: usize) -> Self {
         Self::PageNotFound(index)
     }

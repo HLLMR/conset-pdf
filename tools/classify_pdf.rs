@@ -114,17 +114,30 @@ fn main() -> Result<()> {
 }
 
 fn print_metadata_template() {
-    let template = serde_json::json!({
-        "filename": "example.pdf",
-        "tier": "tier1",
-        "description": "[FILL IN]",
-        "expected_pages": 0,
-        "special_features": ["tables"],
-        "known_issues": [],
-        "source": "[FILL IN]"
-    });
+    // Using a struct instead of json! macro to avoid unwrap warnings
+    #[derive(Serialize)]
+    struct MetadataTemplate<'a> {
+        filename: &'a str,
+        tier: &'a str,
+        description: &'a str,
+        expected_pages: u32,
+        special_features: Vec<&'a str>,
+        known_issues: Vec<&'a str>,
+        source: &'a str,
+    }
+
+    let template = MetadataTemplate {
+        filename: "example.pdf",
+        tier: "tier1",
+        description: "[FILL IN]",
+        expected_pages: 0,
+        special_features: vec!["tables"],
+        known_issues: vec![],
+        source: "[FILL IN]",
+    };
+
     if let Ok(output) = serde_json::to_string_pretty(&template) {
-        println!("{}", output);
+        println!("{output}");
     }
 }
 
@@ -566,13 +579,25 @@ fn autosort(src: &Path, out_dir: &Path, tier: u8, result: &Classification) -> Re
     fs::copy(src, &dest).with_context(|| format!("Failed to copy to {}", dest.display()))?;
 
     let meta_path = dest.with_extension("metadata.json");
-    let meta = serde_json::json!({
-        "filename": filename.to_string_lossy(),
-        "tier": format!("tier{tier}"),
-        "score": result.score,
-        "confidence": result.confidence,
-        "indicators": result.indicators,
-    });
+
+    // Using a struct instead of json! macro to avoid unwrap warnings
+    #[derive(Serialize)]
+    struct MetadataOutput<'a> {
+        filename: String,
+        tier: String,
+        score: i32,
+        confidence: f64,
+        indicators: &'a Indicators,
+    }
+
+    let meta = MetadataOutput {
+        filename: filename.to_string_lossy().to_string(),
+        tier: format!("tier{tier}"),
+        score: result.score,
+        confidence: result.confidence,
+        indicators: &result.indicators,
+    };
+
     fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
     Ok(())
 }

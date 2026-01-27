@@ -3,8 +3,8 @@
 //! This module provides validation rules and constraint checking for IR types
 //! to ensure the integrity and validity of extracted PDF data.
 
-use crate::{BBox, BoundingBox, BBoxError, LayoutTranscript, Page, Span, SpanError};
 use crate::layout::PageError;
+use crate::{BBox, BBoxError, BoundingBox, LayoutTranscript, Page, Span, SpanError};
 use std::cmp::Ordering;
 use std::fmt;
 
@@ -61,11 +61,11 @@ impl Validator {
 /// Transforms a bounding box from PDF coordinates (bottom-left origin) to
 /// normalized coordinates (top-left origin, [0.0, 1.0] range).
 ///
-/// Per TRANSCRIPT_ARCHITECTURE v4.2:
-/// - x_norm = x_pdf / page_width
-/// - y_norm = 1.0 - ((y_pdf + height_pdf) / page_height)
-/// - width_norm = width_pdf / page_width
-/// - height_norm = height_pdf / page_height
+/// Per `TRANSCRIPT_ARCHITECTURE` v4.2:
+/// - `x_norm` = `x_pdf` / `page_width`
+/// - `y_norm` = 1.0 - ((`y_pdf` + `height_pdf`) / `page_height`)
+/// - `width_norm` = `width_pdf` / `page_width`
+/// - `height_norm` = `height_pdf` / `page_height`
 ///
 /// # Arguments
 ///
@@ -159,7 +159,7 @@ fn f64_cmp_with_epsilon(a: f64, b: f64) -> Ordering {
 /// equality. When y-coordinates are equal (within epsilon), spans are sorted
 /// secondarily by their x-coordinate (left to right).
 ///
-/// Per TRANSCRIPT_ARCHITECTURE v4.2, y=0 is at the top and increases downward,
+/// Per `TRANSCRIPT_ARCHITECTURE` v4.2, y=0 is at the top and increases downward,
 /// x=0 is at the left and increases rightward.
 ///
 /// # Arguments
@@ -222,23 +222,19 @@ impl fmt::Display for ValidationError {
                 write!(f, "Transcript contains no pages")
             }
             ValidationError::NonContiguousPages { expected, found } => {
-                write!(
-                    f,
-                    "Pages not contiguous: expected index {}, found {}",
-                    expected, found
-                )
+                write!(f, "Pages not contiguous: expected index {expected}, found {found}")
             }
             ValidationError::InvalidPage { page_index, error } => {
-                write!(f, "Page {}: invalid page ({:?})", page_index, error)
+                write!(f, "Page {page_index}: invalid page ({error:?})")
             }
             ValidationError::InvalidSpan { page_index, span_index, error } => {
-                write!(f, "Page {}: span {} has invalid content ({})", page_index, span_index, error)
+                write!(f, "Page {page_index}: span {span_index} has invalid content ({error})")
             }
             ValidationError::InvalidBBox { page_index, span_index, error } => {
-                write!(f, "Page {}: span {} has out-of-bounds bbox ({})", page_index, span_index, error)
+                write!(f, "Page {page_index}: span {span_index} has out-of-bounds bbox ({error})")
             }
             ValidationError::UnsortedSpans { page_index } => {
-                write!(f, "Page {}: spans are not sorted by (y, x) order", page_index)
+                write!(f, "Page {page_index}: spans are not sorted by (y, x) order")
             }
         }
     }
@@ -246,9 +242,9 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Validates a LayoutTranscript for structural and content integrity.
+/// Validates a `LayoutTranscript` for structural and content integrity.
 ///
-/// Per TRANSCRIPT_ARCHITECTURE V4.2, this function checks:
+/// Per `TRANSCRIPT_ARCHITECTURE` V4.2, this function checks:
 /// - Transcript has at least 1 page
 /// - Page indices are contiguous (0, 1, 2, ...)
 /// - Each page has positive dimensions
@@ -278,6 +274,16 @@ impl std::error::Error for ValidationError {}
 /// let result = validation::validate_transcript(&transcript);
 /// assert!(result.is_ok());
 /// ```
+///
+/// # Errors
+///
+/// Returns `ValidationError` if any validation constraint is violated:
+/// - `EmptyTranscript` if the transcript has no pages
+/// - `NonContiguousPages` if page indices are not sequential starting from 0
+/// - `InvalidPage` if a page has invalid dimensions
+/// - `InvalidSpan` if a span has empty text or invalid font size
+/// - `InvalidBBox` if a bounding box has invalid coordinates
+/// - `UnsortedSpans` if spans are not sorted by (y, x) order
 pub fn validate_transcript(transcript: &LayoutTranscript) -> Result<(), ValidationError> {
     // Check if transcript is empty
     if transcript.page_count() == 0 {
@@ -372,4 +378,3 @@ pub fn validate_transcript(transcript: &LayoutTranscript) -> Result<(), Validati
 
     Ok(())
 }
-

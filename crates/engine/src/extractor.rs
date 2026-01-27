@@ -4,8 +4,8 @@
 //! and converting it into the IR format.
 
 use crate::error::{EngineError, Result};
-use conset_pdf_ir::{LayoutTranscript, TranscriptMetadata};
 use conset_pdf_ir::types::Page;
+use conset_pdf_ir::{LayoutTranscript, TranscriptMetadata};
 
 /// Extracts content from PDF documents.
 pub struct Extractor;
@@ -34,13 +34,13 @@ impl Extractor {
         // Extraction logic to be implemented
         // For now, create a minimal valid transcript with one empty page
         let page = Page::new(0, 612.0, 792.0)
-            .map_err(|e| EngineError::extraction(format!("Failed to create page: {:?}", e)))?;
+            .map_err(|e| EngineError::extraction(format!("Failed to create page: {e:?}")))?;
 
         let metadata = TranscriptMetadata::new(path, 1)
-            .map_err(|e| EngineError::extraction(format!("Failed to create metadata: {:?}", e)))?;
+            .map_err(|e| EngineError::extraction(format!("Failed to create metadata: {e:?}")))?;
 
         LayoutTranscript::new(vec![page], metadata)
-            .map_err(|e| EngineError::extraction(format!("Failed to create transcript: {:?}", e)))
+            .map_err(|e| EngineError::extraction(format!("Failed to create transcript: {e:?}")))
     }
 }
 

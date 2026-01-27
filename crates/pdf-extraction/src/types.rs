@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This type represents a loaded PDF document that can be queried for page count
 /// and used to extract individual pages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Document {
     /// Path to the PDF file
     pub path: String,
@@ -22,15 +22,6 @@ impl Document {
     #[must_use]
     pub fn new(path: String, page_count: usize) -> Self {
         Self { path, page_count }
-    }
-}
-
-impl Default for Document {
-    fn default() -> Self {
-        Self {
-            path: String::new(),
-            page_count: 0,
-        }
     }
 }
 

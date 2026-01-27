@@ -5,10 +5,10 @@
 
 use crate::error::Result;
 use crate::types::{Document, PageData};
-use pdfium_render::prelude::*;
-use std::path::Path;
-use std::env;
 use log::debug;
+use pdfium_render::prelude::*;
+use std::env;
+use std::path::Path;
 
 /// Trait for PDF extraction implementations.
 ///
@@ -84,7 +84,7 @@ pub struct PdfiumExtractor {
 }
 
 impl PdfiumExtractor {
-    /// Creates a new PdfiumExtractor instance.
+    /// Creates a new `PdfiumExtractor` instance.
     ///
     /// # Returns
     ///
@@ -92,14 +92,15 @@ impl PdfiumExtractor {
     ///
     /// # Panics
     ///
-    /// Panics if PDFium library cannot be found or initialized.
+    /// Panics if `PDFium` library cannot be found or initialized.
     #[must_use]
     pub fn new() -> Self {
-        let pdfium = Self::load_pdfium().expect("Failed to initialize PDFium");
+        let pdfium =
+            Self::load_pdfium().unwrap_or_else(|e| panic!("Failed to initialize PDFium: {e}"));
         Self { pdfium }
     }
 
-    /// Attempts to load PDFium from various locations.
+    /// Attempts to load `PDFium` from various locations.
     fn load_pdfium() -> std::result::Result<Pdfium, String> {
         // Try PDFIUM_LIB_PATH environment variable
         if let Ok(dir) = env::var("PDFIUM_LIB_PATH") {
@@ -112,18 +113,18 @@ impl PdfiumExtractor {
 
         // Try workspace root (for tests)
         if let Ok(workspace_root) = env::var("CARGO_WORKSPACE_DIR") {
-            if let Ok(bindings) =
-                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&workspace_root))
-            {
+            if let Ok(bindings) = Pdfium::bind_to_library(
+                Pdfium::pdfium_platform_library_name_at_path(&workspace_root),
+            ) {
                 return Ok(Pdfium::new(bindings));
             }
         }
 
         // Try current working directory
         if let Ok(cwd) = env::current_dir() {
-            if let Ok(bindings) =
-                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(cwd.to_str().unwrap_or(".")))
-            {
+            if let Ok(bindings) = Pdfium::bind_to_library(
+                Pdfium::pdfium_platform_library_name_at_path(cwd.to_str().unwrap_or(".")),
+            ) {
                 return Ok(Pdfium::new(bindings));
             }
         }
@@ -133,9 +134,9 @@ impl PdfiumExtractor {
         let mut root = std::path::PathBuf::from(manifest_dir);
         root.pop(); // crates/pdf-extraction
         root.pop(); // crates
-        if let Ok(bindings) =
-            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(root.to_str().unwrap_or(".")))
-        {
+        if let Ok(bindings) = Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(
+            root.to_str().unwrap_or("."),
+        )) {
             return Ok(Pdfium::new(bindings));
         }
 
@@ -156,7 +157,7 @@ impl Default for PdfiumExtractor {
 
 impl PdfExtractor for PdfiumExtractor {
     fn load_document(&self, path: &str) -> Result<Document> {
-        debug!("Loading PDF from {}", path);
+        debug!("Loading PDF from {path}");
 
         // Check if path is empty
         if path.is_empty() {
@@ -180,7 +181,7 @@ impl PdfExtractor for PdfiumExtractor {
         let document = self
             .pdfium
             .load_pdf_from_file(path, None)
-            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("{}", e)))?;
+            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("{e}")))?;
 
         let page_count = document.pages().len() as usize;
 
@@ -189,7 +190,7 @@ impl PdfExtractor for PdfiumExtractor {
 
     fn get_page_count(&self, doc: &Document) -> usize {
         let count = doc.page_count;
-        debug!("PDF has {} pages", count);
+        debug!("PDF has {count} pages");
         count
     }
 
@@ -204,28 +205,33 @@ impl PdfExtractor for PdfiumExtractor {
         }
 
         // Load the document to extract text
-        let document = self
-            .pdfium
-            .load_pdf_from_file(&doc.path, None)
-            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to load document for text extraction: {}", e)))?;
+        let document = self.pdfium.load_pdf_from_file(&doc.path, None).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!(
+                "Failed to load document for text extraction: {e}"
+            ))
+        })?;
 
         // Convert page_index to u16 for pdfium-render API
+        #[allow(clippy::cast_possible_truncation)]
         let page_index_u16: u16 = page_index as u16;
 
         // Get the page
-        let page = document
-            .pages()
-            .get(page_index_u16)
-            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to get page {}: {}", page_index, e)))?;
+        let page = document.pages().get(page_index_u16).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!(
+                "Failed to get page {page_index}: {e}"
+            ))
+        })?;
 
         // Extract text from the page
         let text = page
             .text()
-            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to extract text: {}", e)))?
+            .map_err(|e| {
+                crate::error::ExtractionError::pdf_error(format!("Failed to extract text: {e}"))
+            })?
             .all();
 
         let text_len = text.len();
-        debug!("Extracted {} chars from page {}", text_len, page_index);
+        debug!("Extracted {text_len} chars from page {page_index}");
 
         Ok(text)
     }

@@ -1,7 +1,10 @@
+#![allow(clippy::disallowed_methods)]
+#![allow(clippy::uninlined_format_args)]
+
 //! Tests for Span content element validation.
 //!
 //! These tests verify that Span correctly validates text content, font sizing,
-//! and bounding box constraints according to TRANSCRIPT_ARCHITECTURE v4.2.
+//! and bounding box constraints according to `TRANSCRIPT_ARCHITECTURE` v4.2.
 
 use conset_pdf_ir::types::{BBox, Span, SpanError};
 
@@ -79,10 +82,7 @@ fn test_span_rejects_zero_font_size() {
 #[test]
 fn test_span_validates_bbox_bounds() {
     let bbox_result = BBox::new(1.5, 0.0, 0.1, 0.1);
-    assert!(
-        bbox_result.is_err(),
-        "Invalid bbox should fail before Span creation"
-    );
+    assert!(bbox_result.is_err(), "Invalid bbox should fail before Span creation");
 
     // When trying to create a Span with an out-of-bounds bbox, it should propagate the error
     // This test demonstrates that Span respects BBox validation

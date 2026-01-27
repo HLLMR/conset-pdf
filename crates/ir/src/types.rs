@@ -67,7 +67,7 @@ impl fmt::Display for SpanError {
             SpanError::EmptyText => write!(f, "Span text cannot be empty or whitespace-only"),
             SpanError::InvalidFontSize => write!(f, "Span font size must be greater than 0.0"),
             SpanError::InvalidBBox(bbox_err) => {
-                write!(f, "Span bounding box validation failed: {}", bbox_err)
+                write!(f, "Span bounding box validation failed: {bbox_err}")
             }
         }
     }
@@ -103,7 +103,7 @@ pub struct BoundingBox {
 /// - x increases from left to right
 /// - y increases from top to bottom
 ///
-/// This follows the TRANSCRIPT_ARCHITECTURE v4.2 invariants for coordinate systems.
+/// This follows the `TRANSCRIPT_ARCHITECTURE` v4.2 invariants for coordinate systems.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BBox {
     /// Left edge of the bounding box, normalized to [0.0, 1.0].
@@ -165,12 +165,7 @@ impl BBox {
             return Err(BBoxError::OutOfBounds);
         }
 
-        Ok(BBox {
-            x,
-            y,
-            width,
-            height,
-        })
+        Ok(BBox { x, y, width, height })
     }
 }
 
@@ -178,7 +173,7 @@ impl BBox {
 ///
 /// A span is the basic unit of text content in the IR, containing the actual text
 /// along with its bounding box and typographic properties. All coordinates and
-/// dimensions follow the TRANSCRIPT_ARCHITECTURE v4.2 invariants:
+/// dimensions follow the `TRANSCRIPT_ARCHITECTURE` v4.2 invariants:
 /// - Coordinates normalized to [0.0, 1.0] range
 /// - Top-left origin (y=0 at top, increases downward)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
