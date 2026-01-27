@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::fmt;
 
 use crate::types::Span;
 
@@ -16,6 +17,50 @@ pub enum PageError {
     /// Page width or height is zero.
     ZeroDimension,
 }
+
+/// Errors that can occur when constructing or validating a `LayoutTranscript`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TranscriptError {
+    /// The transcript contains no pages.
+    EmptyTranscript,
+    /// Page indices are not contiguous starting at 0.
+    /// Contains expected index and found index.
+    NonContiguousPages { expected: usize, found: usize },
+    /// A page index appears more than once.
+    DuplicatePageIndex(usize),
+    /// Invalid page encountered during validation.
+    InvalidPage(PageError),
+    /// Error during JSON serialization or deserialization.
+    SerializationError(String),
+}
+
+impl fmt::Display for TranscriptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TranscriptError::EmptyTranscript => {
+                write!(f, "Transcript contains no pages")
+            }
+            TranscriptError::NonContiguousPages { expected, found } => {
+                write!(
+                    f,
+                    "Page indices are not contiguous: expected index {}, found {}",
+                    expected, found
+                )
+            }
+            TranscriptError::DuplicatePageIndex(idx) => {
+                write!(f, "Duplicate page index: {}", idx)
+            }
+            TranscriptError::InvalidPage(err) => {
+                write!(f, "Invalid page: {:?}", err)
+            }
+            TranscriptError::SerializationError(msg) => {
+                write!(f, "Serialization error: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for TranscriptError {}
 
 /// A single page in a PDF document.
 ///
@@ -85,6 +130,33 @@ impl Page {
     pub fn spans(&self) -> &[Span] {
         &self.spans
     }
+
+    /// Returns the page index.
+    pub fn page_index(&self) -> usize {
+        self.page_index
+    }
+}
+
+/// Metadata about the transcript and its extraction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TranscriptMetadata {
+    /// File path of the source PDF document.
+    pub file_path: String,
+    /// ISO 8601 timestamp when extraction was performed.
+    pub extraction_timestamp: String,
+    /// Version of the extraction engine that produced this transcript.
+    pub version: String,
+}
+
+impl TranscriptMetadata {
+    /// Creates new transcript metadata.
+    pub fn new(file_path: String, extraction_timestamp: String, version: String) -> Self {
+        Self {
+            file_path,
+            extraction_timestamp,
+            version,
+        }
+    }
 }
 
 /// The main output of PDF extraction and analysis.
@@ -92,21 +164,186 @@ impl Page {
 /// A `LayoutTranscript` represents the complete structural and semantic information
 /// extracted from a PDF document, including page layouts, text elements, and their
 /// spatial relationships.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Per TRANSCRIPT_ARCHITECTURE V4.2, pages are ordered by page_index and must
+/// form a contiguous sequence starting at 0.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayoutTranscript {
-    // Fields to be defined
+    /// Pages ordered by page_index (must be contiguous starting at 0).
+    pages: Vec<Page>,
+    /// Metadata about the transcript and extraction.
+    metadata: TranscriptMetadata,
 }
 
 impl LayoutTranscript {
-    /// Creates a new, empty layout transcript.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {}
+    /// Creates a new layout transcript with the given pages and metadata.
+    ///
+    /// # Validation
+    ///
+    /// This constructor performs full validation:
+    /// - Pages vector must not be empty
+    /// - Page indices must be contiguous starting at 0
+    /// - No duplicate page indices allowed
+    /// - All pages must pass their own validation
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError` if any validation constraint is violated.
+    pub fn new(pages: Vec<Page>, metadata: TranscriptMetadata) -> Result<Self, TranscriptError> {
+        // Check for empty pages
+        if pages.is_empty() {
+            return Err(TranscriptError::EmptyTranscript);
+        }
+
+        // Check for contiguous indices and duplicates
+        let mut seen_indices = std::collections::HashSet::new();
+        for (position, page) in pages.iter().enumerate() {
+            let idx = page.page_index;
+
+            // Check for duplicates
+            if !seen_indices.insert(idx) {
+                return Err(TranscriptError::DuplicatePageIndex(idx));
+            }
+
+            // Check for contiguous sequence starting at 0
+            if idx != position {
+                return Err(TranscriptError::NonContiguousPages {
+                    expected: position,
+                    found: idx,
+                });
+            }
+        }
+
+        Ok(Self { pages, metadata })
+    }
+
+    /// Creates a LayoutTranscript from a vector of pages.
+    ///
+    /// Creates default metadata and performs full validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError` if pages fail validation.
+    pub fn from_pages(pages: Vec<Page>) -> Result<Self, TranscriptError> {
+        let metadata = TranscriptMetadata::new(
+            String::new(),
+            String::new(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+        Self::new(pages, metadata)
+    }
+
+    /// Adds a page to the transcript.
+    ///
+    /// The page is validated before addition. The page index must match the next
+    /// expected index (equal to the current page count).
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError` if the page index is not the next expected index.
+    pub fn add_page(&mut self, page: Page) -> Result<(), TranscriptError> {
+        let expected_index = self.pages.len();
+        if page.page_index != expected_index {
+            return Err(TranscriptError::NonContiguousPages {
+                expected: expected_index,
+                found: page.page_index,
+            });
+        }
+        self.pages.push(page);
+        Ok(())
+    }
+
+    /// Validates the transcript structure.
+    ///
+    /// Checks:
+    /// - Pages are not empty
+    /// - Page indices are contiguous starting at 0
+    /// - No duplicate indices
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError` if validation fails.
+    pub fn validate(&self) -> Result<(), TranscriptError> {
+        if self.pages.is_empty() {
+            return Err(TranscriptError::EmptyTranscript);
+        }
+
+        let mut seen_indices = std::collections::HashSet::new();
+        for (position, page) in self.pages.iter().enumerate() {
+            let idx = page.page_index;
+
+            if !seen_indices.insert(idx) {
+                return Err(TranscriptError::DuplicatePageIndex(idx));
+            }
+
+            if idx != position {
+                return Err(TranscriptError::NonContiguousPages {
+                    expected: position,
+                    found: idx,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the number of pages in the transcript.
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Returns a reference to the pages.
+    pub fn pages(&self) -> &[Page] {
+        &self.pages
+    }
+
+    /// Returns a reference to the metadata.
+    pub fn metadata(&self) -> &TranscriptMetadata {
+        &self.metadata
+    }
+
+    /// Serializes the transcript to JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError::SerializationError` if serialization fails.
+    pub fn to_json(&self) -> Result<String, TranscriptError> {
+        serde_json::to_string(self).map_err(|e| {
+            TranscriptError::SerializationError(format!("Failed to serialize transcript: {}", e))
+        })
+    }
+
+    /// Deserializes a transcript from JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TranscriptError::SerializationError` if deserialization fails,
+    /// or validation fails on the deserialized transcript.
+    pub fn from_json(json: &str) -> Result<Self, TranscriptError> {
+        let transcript = serde_json::from_str::<Self>(json).map_err(|e| {
+            TranscriptError::SerializationError(format!("Failed to deserialize transcript: {}", e))
+        })?;
+
+        // Validate the deserialized transcript
+        transcript.validate()?;
+
+        Ok(transcript)
     }
 }
 
 impl Default for LayoutTranscript {
+    /// Creates a default transcript with minimal metadata.
+    ///
+    /// Note: This will panic if you try to validate it, as it contains no pages.
+    /// Use `new()` or `from_pages()` to create a valid transcript.
     fn default() -> Self {
-        Self::new()
+        Self {
+            pages: Vec::new(),
+            metadata: TranscriptMetadata::new(
+                String::new(),
+                String::new(),
+                env!("CARGO_PKG_VERSION").to_string(),
+            ),
+        }
     }
 }

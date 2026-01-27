@@ -3,8 +3,9 @@
 //! This module handles extracting structured content from PDF documents
 //! and converting it into the IR format.
 
-use crate::error::Result;
-use conset_pdf_ir::LayoutTranscript;
+use crate::error::{EngineError, Result};
+use conset_pdf_ir::{LayoutTranscript, TranscriptMetadata};
+use conset_pdf_ir::types::Page;
 
 /// Extracts content from PDF documents.
 pub struct Extractor;
@@ -29,9 +30,20 @@ impl Extractor {
     /// # Errors
     ///
     /// Returns an error if reading or parsing the PDF fails.
-    pub fn extract(&self, _path: &str) -> Result<LayoutTranscript> {
+    pub fn extract(&self, path: &str) -> Result<LayoutTranscript> {
         // Extraction logic to be implemented
-        Ok(LayoutTranscript::new())
+        // For now, create a minimal valid transcript with one empty page
+        let page = Page::new(0, 612.0, 792.0)
+            .map_err(|e| EngineError::extraction(format!("Failed to create page: {:?}", e)))?;
+
+        let metadata = TranscriptMetadata::new(
+            path.to_string(),
+            "2026-01-27T00:00:00Z".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+
+        LayoutTranscript::new(vec![page], metadata)
+            .map_err(|e| EngineError::extraction(format!("Failed to create transcript: {:?}", e)))
     }
 }
 
