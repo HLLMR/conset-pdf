@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::types::{Document, PageData};
 use pdfium_render::prelude::*;
 use std::path::Path;
+use std::env;
 use log::debug;
 
 /// Trait for PDF extraction implementations.
@@ -72,11 +73,40 @@ impl PdfiumExtractor {
     /// # Returns
     ///
     /// A new extractor with Pdfium library initialized.
+    ///
+    /// # Panics
+    ///
+    /// Panics if PDFium library cannot be found or initialized.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            pdfium: Pdfium::default(),
+        let pdfium = Self::load_pdfium().expect("Failed to initialize PDFium");
+        Self { pdfium }
+    }
+
+    /// Attempts to load PDFium from various locations.
+    fn load_pdfium() -> std::result::Result<Pdfium, String> {
+        // Try PDFIUM_LIB_PATH environment variable
+        if let Ok(dir) = env::var("PDFIUM_LIB_PATH") {
+            if let Ok(bindings) =
+                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&dir))
+            {
+                return Ok(Pdfium::new(bindings));
+            }
         }
+
+        // Try project root directory
+        if let Ok(bindings) =
+            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
+        {
+            return Ok(Pdfium::new(bindings));
+        }
+
+        // Try system library
+        if let Ok(bindings) = Pdfium::bind_to_system_library() {
+            return Ok(Pdfium::new(bindings));
+        }
+
+        Err("PDFium library not found. Download pdfium.dll/dylib/so and place it in project root or set PDFIUM_LIB_PATH".to_string())
     }
 }
 
@@ -120,7 +150,9 @@ impl PdfExtractor for PdfiumExtractor {
     }
 
     fn get_page_count(&self, doc: &Document) -> usize {
-        doc.page_count
+        let count = doc.page_count;
+        debug!("PDF has {} pages", count);
+        count
     }
 
     fn extract_page(&self, _doc: &Document, page_index: usize) -> Result<PageData> {
