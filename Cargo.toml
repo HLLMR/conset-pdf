@@ -4,6 +4,7 @@ members = [
     "crates/ir",
     "crates/audit",
     "crates/pdf-extraction",
+    "tools",
 ]
 resolver = "2"
 

@@ -41,6 +41,14 @@ extraction_results/
 # Logs
 *.log
 
+# PDFium binaries (platform-specific, not checked in)
+pdfium.dll
+libpdfium.dylib
+libpdfium.so
+pdfium-*.tgz
+bin/pdfium.*
+lib/libpdfium.*
+
 # Internal docs
 /docs/dev/
 /docs/reference/

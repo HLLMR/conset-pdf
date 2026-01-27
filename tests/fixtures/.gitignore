@@ -7,6 +7,7 @@
 *.dylib
 *.dll
 *.exe
+*.json
 
 # Temporary test output
 *.log

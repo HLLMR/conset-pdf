@@ -42,6 +42,8 @@ cargo test --workspace
 cargo run --bin conset-pdf -- --help
 ```
 
+See [docs/SETUP.md](docs/SETUP.md) for full environment setup and PDFium installation.
+
 ## Documentation
 
 - [Master Plan V4.2](docs/master_plan_v4_2.md) - Project strategy and phasing
