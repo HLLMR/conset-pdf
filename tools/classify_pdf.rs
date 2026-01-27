@@ -11,7 +11,6 @@ use clap::{ArgAction, Parser};
 use colored::*;
 use pdfium_render::prelude::*;
 use serde::Serialize;
-use serde_json::json;
 
 #[derive(Parser, Debug)]
 #[command(name = "classify-pdf", about = "Classify PDFs into torture corpus tiers", version)]
@@ -98,10 +97,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let path = args
-        .pdf_path
-        .as_ref()
-        .context("Provide <PDF_PATH> or use --batch")?;
+    let path = args.pdf_path.as_ref().context("Provide <PDF_PATH> or use --batch")?;
 
     let result = classify_one(path, args.verbose)?;
     emit(path, &result, args.json)?;
@@ -118,7 +114,7 @@ fn main() -> Result<()> {
 }
 
 fn print_metadata_template() {
-    let template = json!({
+    let template = serde_json::json!({
         "filename": "example.pdf",
         "tier": "tier1",
         "description": "[FILL IN]",
@@ -127,7 +123,9 @@ fn print_metadata_template() {
         "known_issues": [],
         "source": "[FILL IN]"
     });
-    println!("{}", serde_json::to_string_pretty(&template).unwrap());
+    if let Ok(output) = serde_json::to_string_pretty(&template) {
+        println!("{}", output);
+    }
 }
 
 fn load_pdfium() -> Result<Pdfium> {
@@ -139,7 +137,9 @@ fn load_pdfium() -> Result<Pdfium> {
         }
     }
 
-    if let Ok(bindings) = Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./")) {
+    if let Ok(bindings) =
+        Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
+    {
         return Ok(Pdfium::new(bindings));
     }
 
@@ -231,20 +231,31 @@ fn classify_one(path: &Path, verbose: bool) -> Result<Classification> {
         },
     };
 
-    let (score, tier, mut reasoning_updates, measured) = score(&indicators, page_sizes.as_ref(), verbose);
+    let (score, tier, mut reasoning_updates, measured) =
+        score(&indicators, page_sizes.as_ref(), verbose);
     reasoning.append(&mut reasoning_updates);
 
     // Confidence: fraction of measured signals plus how strong the score is
     let confidence = compute_confidence(score, tier, measured);
 
     if verbose {
-        eprintln!("Analyzed {}: score={}, tier={}, confidence={:.2}", path.display(), score, tier, confidence);
+        eprintln!(
+            "Analyzed {}: score={}, tier={}, confidence={:.2}",
+            path.display(),
+            score,
+            tier,
+            confidence
+        );
     }
 
     Ok(Classification { tier, score, confidence, reasoning, indicators })
 }
 
-fn score(ind: &Indicators, page_sizes: Option<&PageSizeEvaluation>, verbose: bool) -> (i32, u8, Vec<String>, usize) {
+fn score(
+    ind: &Indicators,
+    page_sizes: Option<&PageSizeEvaluation>,
+    verbose: bool,
+) -> (i32, u8, Vec<String>, usize) {
     let mut score = 0i32;
     let mut reasoning = Vec::new();
     let mut measured = 0usize;
@@ -311,12 +322,12 @@ fn score(ind: &Indicators, page_sizes: Option<&PageSizeEvaluation>, verbose: boo
     if let Some(status) = page_sizes {
         measured += 1;
         match &status.status {
-            PageSizeStatus::AllStandard { name } => {
+            PageSizeStatus::All { name } => {
                 score += 20;
                 reasoning.push(format!("Standard page sizes ({name}) [+20]"));
                 log_verbose(verbose, "All pages standard sizes [+20]");
             }
-            PageSizeStatus::MixedStandard { names } => {
+            PageSizeStatus::Mixed { names } => {
                 score += 10;
                 let joined = names.join(", ");
                 reasoning.push(format!("Mixed standard page sizes ({joined}) [+10]"));
@@ -377,8 +388,8 @@ fn parse_year(s: &str) -> Option<i32> {
 
 #[derive(Debug)]
 enum PageSizeStatus {
-    AllStandard { name: String },
-    MixedStandard { names: Vec<String> },
+    All { name: String },
+    Mixed { names: Vec<String> },
     NonStandard,
 }
 
@@ -408,11 +419,17 @@ fn assess_page_sizes(doc: &PdfDocument, verbose: bool) -> Option<PageSizeEvaluat
             match standard {
                 Some(name) => {
                     names.insert(name.to_string());
-                    log_verbose(verbose, &format!("Page {idx}: {:.0}x{:.0} -> {name} ({orientation})", w, h));
+                    log_verbose(
+                        verbose,
+                        &format!("Page {idx}: {:.0}x{:.0} -> {name} ({orientation})", w, h),
+                    );
                 }
                 None => {
                     any_non_standard = true;
-                    log_verbose(verbose, &format!("Page {idx}: {:.0}x{:.0} -> Non-standard ({orientation})", w, h));
+                    log_verbose(
+                        verbose,
+                        &format!("Page {idx}: {:.0}x{:.0} -> Non-standard ({orientation})", w, h),
+                    );
                 }
             }
         }
@@ -423,17 +440,15 @@ fn assess_page_sizes(doc: &PdfDocument, verbose: bool) -> Option<PageSizeEvaluat
     } else {
         let unique: Vec<String> = names.into_iter().collect();
         if unique.len() == 1 {
-            PageSizeStatus::AllStandard {
-                name: unique[0].clone(),
-            }
+            PageSizeStatus::All { name: unique[0].clone() }
         } else {
-            PageSizeStatus::MixedStandard { names: unique }
+            PageSizeStatus::Mixed { names: unique }
         }
     };
 
     let summary = match &status {
-        PageSizeStatus::AllStandard { name } => name.clone(),
-        PageSizeStatus::MixedStandard { names } => format!("Mixed standard ({})", names.join(", ")),
+        PageSizeStatus::All { name } => name.clone(),
+        PageSizeStatus::Mixed { names } => format!("Mixed standard ({})", names.join(", ")),
         PageSizeStatus::NonStandard => "Non-standard".to_string(),
     };
 
@@ -475,7 +490,10 @@ fn compute_confidence(score: i32, tier: u8, measured: usize) -> f64 {
     conf
 }
 
-fn extract_metadata(path: &Path, _doc: &PdfDocument) -> (Option<String>, Option<String>, Vec<String>) {
+fn extract_metadata(
+    path: &Path,
+    _doc: &PdfDocument,
+) -> (Option<String>, Option<String>, Vec<String>) {
     // pdfium-render 0.8.x does not currently expose producer / creation_date directly;
     // fall back to pdfinfo when available.
     eprintln!("[debug] pdfium metadata not available; falling back to pdfinfo");
@@ -492,18 +510,19 @@ fn extract_metadata(path: &Path, _doc: &PdfDocument) -> (Option<String>, Option<
             for line in stdout.lines() {
                 let line = line.trim();
                 if line.starts_with("Producer:") {
-                    producer = line.splitn(2, ':').nth(1).map(|s| s.trim().to_string());
+                    producer = line.split_once(':').map(|x| x.1.trim().to_string());
                 }
                 if line.starts_with("CreationDate:") {
-                    creation_date = line.splitn(2, ':').nth(1).map(|s| s.trim().to_string());
+                    creation_date = line.split_once(':').map(|x| x.1.trim().to_string());
                 }
             }
-            eprintln!("[debug] Extracted metadata via pdfinfo: producer={:?}, date={:?}", producer, creation_date);
+            eprintln!(
+                "[debug] Extracted metadata via pdfinfo: producer={:?}, date={:?}",
+                producer, creation_date
+            );
             (producer, creation_date, Vec::new())
         }
-        Err(e) => {
-            (None, None, vec![format!("pdfinfo not available: {e}")])
-        }
+        Err(e) => (None, None, vec![format!("pdfinfo not available: {e}")]),
     }
 }
 
@@ -511,8 +530,9 @@ fn emit(path: &Path, result: &Classification, json_mode: bool) -> Result<()> {
     if json_mode {
         let mut value = serde_json::to_value(result)?;
         if let Some(obj) = value.as_object_mut() {
-            obj.insert("filename".to_string(), json!(path.file_name().and_then(|s| s.to_str())));
-            obj.insert("path".to_string(), json!(path.display().to_string()));
+            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("unknown");
+            obj.insert("filename".to_string(), serde_json::Value::String(filename.to_string()));
+            obj.insert("path".to_string(), serde_json::Value::String(path.display().to_string()));
         }
         println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
@@ -546,7 +566,7 @@ fn autosort(src: &Path, out_dir: &Path, tier: u8, result: &Classification) -> Re
     fs::copy(src, &dest).with_context(|| format!("Failed to copy to {}", dest.display()))?;
 
     let meta_path = dest.with_extension("metadata.json");
-    let meta = json!({
+    let meta = serde_json::json!({
         "filename": filename.to_string_lossy(),
         "tier": format!("tier{tier}"),
         "score": result.score,
