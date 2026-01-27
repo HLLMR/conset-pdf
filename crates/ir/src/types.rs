@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub use crate::layout::{Page, PageError};
+
 /// A PDF document representation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -13,11 +15,6 @@ pub struct Document {
 }
 
 /// A page within a document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Page {
-    // Fields to be defined
-}
-
 /// A content element (text, image, shape, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Element {
