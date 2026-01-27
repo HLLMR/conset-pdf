@@ -8,12 +8,22 @@ use std::process::Command;
 use anyhow::{anyhow, Context, Result};
 use chrono::{Datelike, NaiveDate};
 use clap::{ArgAction, Parser};
-use colored::*;
+use colored::Colorize;
 use pdfium_render::prelude::*;
 use serde::Serialize;
 
+#[derive(Serialize)]
+struct MetadataOutput<'a> {
+    filename: String,
+    tier: String,
+    score: i32,
+    confidence: f64,
+    indicators: &'a Indicators,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "classify-pdf", about = "Classify PDFs into torture corpus tiers", version)]
+#[allow(clippy::struct_excessive_bools)]
 struct Cli {
     /// Path to a PDF (ignored when --batch)
     pdf_path: Option<PathBuf>,
@@ -204,11 +214,8 @@ fn classify_one(path: &Path, verbose: bool) -> Result<Classification> {
 
     // Page metrics
     let page_count: usize = doc.pages().len().into();
-    let bytes_per_page = if page_count > 0 {
-        Some((file_size_bytes as f64 / page_count as f64) as u64)
-    } else {
-        None
-    };
+    let bytes_per_page =
+        if page_count > 0 { Some(file_size_bytes / page_count as u64) } else { None };
 
     // Page size assessment (all pages)
     let page_sizes = assess_page_sizes(&doc, verbose);
@@ -218,10 +225,12 @@ fn classify_one(path: &Path, verbose: bool) -> Result<Classification> {
     let mut text_extractable = None;
     let mut extracted_chars = 0usize;
     for idx in 0..page_count.min(3) {
-        if let Ok(page) = doc.pages().get(idx as u16) {
-            if let Ok(text) = page.text() {
-                let s = text.all();
-                extracted_chars += s.len();
+        if let Ok(idx_u16) = u16::try_from(idx) {
+            if let Ok(page) = doc.pages().get(idx_u16) {
+                if let Ok(text) = page.text() {
+                    let s = text.all();
+                    extracted_chars += s.len();
+                }
             }
         }
     }
@@ -422,26 +431,25 @@ fn assess_page_sizes(doc: &PdfDocument, verbose: bool) -> Option<PageSizeEvaluat
     let mut any_non_standard = false;
 
     for idx in 0..page_count {
-        if let Ok(page) = doc.pages().get(idx as u16) {
-            let w = page.width().value;
-            let h = page.height().value;
-            let (norm_w, norm_h) = if w <= h { (w, h) } else { (h, w) };
-            let orientation = if w <= h { "portrait" } else { "landscape" };
-            let standard = classify_standard_size(norm_w, norm_h);
+        if let Ok(idx_u16) = u16::try_from(idx) {
+            if let Ok(page) = doc.pages().get(idx_u16) {
+                let w = page.width().value;
+                let h = page.height().value;
+                let (norm_w, norm_h) = if w <= h { (w, h) } else { (h, w) };
+                let orientation = if w <= h { "portrait" } else { "landscape" };
+                let standard = classify_standard_size(norm_w, norm_h);
 
-            match standard {
-                Some(name) => {
+                if let Some(name) = standard {
                     names.insert(name.to_string());
                     log_verbose(
                         verbose,
-                        &format!("Page {idx}: {:.0}x{:.0} -> {name} ({orientation})", w, h),
+                        &format!("Page {idx}: {w:.0}x{h:.0} -> {name} ({orientation})"),
                     );
-                }
-                None => {
+                } else {
                     any_non_standard = true;
                     log_verbose(
                         verbose,
-                        &format!("Page {idx}: {:.0}x{:.0} -> Non-standard ({orientation})", w, h),
+                        &format!("Page {idx}: {w:.0}x{h:.0} -> Non-standard ({orientation})"),
                     );
                 }
             }
@@ -490,11 +498,11 @@ fn compute_confidence(score: i32, tier: u8, measured: usize) -> f64 {
     if measured == 0 {
         return 0.3;
     }
-    let coverage = measured as f64 / 6.0; // rough number of signals
+    let coverage = f64::from(u32::try_from(measured).unwrap_or(0)) / 6.0; // rough number of signals
     let tier_margin = match tier {
-        1 => (score - 40).max(0) as f64 / 60.0,
-        2 => (score - 20).abs() as f64 / 40.0,
-        _ => (20 - score).max(0) as f64 / 40.0,
+        1 => f64::from((score - 40).max(0)) / 60.0,
+        2 => f64::from((score - 20).abs()) / 40.0,
+        _ => f64::from((20 - score).max(0)) / 40.0,
     };
     let mut conf = 0.5 * coverage + 0.5 * tier_margin;
     if conf > 1.0 {
@@ -530,8 +538,7 @@ fn extract_metadata(
                 }
             }
             eprintln!(
-                "[debug] Extracted metadata via pdfinfo: producer={:?}, date={:?}",
-                producer, creation_date
+                "[debug] Extracted metadata via pdfinfo: producer={producer:?}, date={creation_date:?}"
             );
             (producer, creation_date, Vec::new())
         }
@@ -562,7 +569,7 @@ fn emit(path: &Path, result: &Classification, json_mode: bool) -> Result<()> {
         println!("├─ {line}");
     }
     println!("└─ Total Score: {}", result.score);
-    println!("Recommended Tier: {}", tier_str);
+    println!("Recommended Tier: {tier_str}");
     println!("Confidence: {:.2}", result.confidence);
     Ok(())
 }
@@ -579,16 +586,6 @@ fn autosort(src: &Path, out_dir: &Path, tier: u8, result: &Classification) -> Re
     fs::copy(src, &dest).with_context(|| format!("Failed to copy to {}", dest.display()))?;
 
     let meta_path = dest.with_extension("metadata.json");
-
-    // Using a struct instead of json! macro to avoid unwrap warnings
-    #[derive(Serialize)]
-    struct MetadataOutput<'a> {
-        filename: String,
-        tier: String,
-        score: i32,
-        confidence: f64,
-        indicators: &'a Indicators,
-    }
 
     let meta = MetadataOutput {
         filename: filename.to_string_lossy().to_string(),
