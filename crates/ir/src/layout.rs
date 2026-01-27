@@ -3,11 +3,31 @@
 //! This module contains the core types that represent the hierarchical structure
 //! and layout of PDF documents as extracted from PDFs.
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 
 use crate::types::Span;
+
+/// Errors that can occur when constructing or validating metadata.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MetadataError {
+    /// Source path is empty or contains only whitespace.
+    EmptySourcePath,
+}
+
+impl fmt::Display for MetadataError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MetadataError::EmptySourcePath => {
+                write!(f, "Source path cannot be empty")
+            }
+        }
+    }
+}
+
+impl std::error::Error for MetadataError {}
 
 /// Errors that can occur when constructing or mutating a `Page`.
 #[derive(Debug, Clone, PartialEq)]
@@ -140,22 +160,56 @@ impl Page {
 /// Metadata about the transcript and its extraction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TranscriptMetadata {
-    /// File path of the source PDF document.
-    pub file_path: String,
+    /// Original PDF source path.
+    pub source_path: String,
     /// ISO 8601 timestamp when extraction was performed.
     pub extraction_timestamp: String,
     /// Version of the extraction engine that produced this transcript.
-    pub version: String,
+    pub conset_version: String,
+    /// Original page count of the PDF document.
+    pub pdf_page_count: usize,
 }
 
 impl TranscriptMetadata {
     /// Creates new transcript metadata.
-    pub fn new(file_path: String, extraction_timestamp: String, version: String) -> Self {
-        Self {
-            file_path,
-            extraction_timestamp,
-            version,
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Path to the source PDF document (must not be empty)
+    /// * `pdf_page_count` - Original page count of the PDF
+    ///
+    /// # Errors
+    ///
+    /// Returns `MetadataError::EmptySourcePath` if source_path is empty or whitespace-only.
+    pub fn new(source_path: &str, pdf_page_count: usize) -> Result<Self, MetadataError> {
+        // Validate source_path
+        if source_path.trim().is_empty() {
+            return Err(MetadataError::EmptySourcePath);
         }
+
+        let metadata = Self {
+            source_path: source_path.to_string(),
+            extraction_timestamp: Utc::now().to_rfc3339(),
+            conset_version: env!("CARGO_PKG_VERSION").to_string(),
+            pdf_page_count,
+        };
+
+        metadata.validate()?;
+
+        Ok(metadata)
+    }
+
+    /// Validates the metadata structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MetadataError` if validation fails.
+    pub fn validate(&self) -> Result<(), MetadataError> {
+        if self.source_path.trim().is_empty() {
+            return Err(MetadataError::EmptySourcePath);
+        }
+
+        Ok(())
     }
 }
 
@@ -219,17 +273,14 @@ impl LayoutTranscript {
 
     /// Creates a LayoutTranscript from a vector of pages.
     ///
-    /// Creates default metadata and performs full validation.
+    /// Creates default metadata with a placeholder path and performs full validation.
     ///
     /// # Errors
     ///
-    /// Returns `TranscriptError` if pages fail validation.
+    /// Returns `TranscriptError` if pages fail validation or metadata creation fails.
     pub fn from_pages(pages: Vec<Page>) -> Result<Self, TranscriptError> {
-        let metadata = TranscriptMetadata::new(
-            String::new(),
-            String::new(),
-            env!("CARGO_PKG_VERSION").to_string(),
-        );
+        let metadata = TranscriptMetadata::new("<unknown>", 0)
+            .map_err(|e| TranscriptError::SerializationError(format!("Metadata error: {}", e)))?;
         Self::new(pages, metadata)
     }
 
@@ -337,13 +388,11 @@ impl Default for LayoutTranscript {
     /// Note: This will panic if you try to validate it, as it contains no pages.
     /// Use `new()` or `from_pages()` to create a valid transcript.
     fn default() -> Self {
+        let metadata = TranscriptMetadata::new("<default>", 0)
+            .expect("<default> should never be considered empty");
         Self {
             pages: Vec::new(),
-            metadata: TranscriptMetadata::new(
-                String::new(),
-                String::new(),
-                env!("CARGO_PKG_VERSION").to_string(),
-            ),
+            metadata,
         }
     }
 }

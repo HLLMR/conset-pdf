@@ -36,11 +36,8 @@ impl Extractor {
         let page = Page::new(0, 612.0, 792.0)
             .map_err(|e| EngineError::extraction(format!("Failed to create page: {:?}", e)))?;
 
-        let metadata = TranscriptMetadata::new(
-            path.to_string(),
-            "2026-01-27T00:00:00Z".to_string(),
-            env!("CARGO_PKG_VERSION").to_string(),
-        );
+        let metadata = TranscriptMetadata::new(path, 1)
+            .map_err(|e| EngineError::extraction(format!("Failed to create metadata: {:?}", e)))?;
 
         LayoutTranscript::new(vec![page], metadata)
             .map_err(|e| EngineError::extraction(format!("Failed to create transcript: {:?}", e)))

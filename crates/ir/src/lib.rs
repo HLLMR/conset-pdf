@@ -25,7 +25,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export main types for convenience
-pub use layout::{LayoutTranscript, TranscriptError, TranscriptMetadata};
+pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
 pub use types::{BBox, BBoxError, Document, Element, Page, Span, SpanError};
 pub use validation::Validator;
 
