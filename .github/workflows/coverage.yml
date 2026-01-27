@@ -20,7 +20,7 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --out Html --output-dir coverage --exclude conset-pdf-extraction --timeout 300
+        run: cargo tarpaulin --workspace --out Html --output-dir coverage --exclude conset-pdf-extraction --timeout 300
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
