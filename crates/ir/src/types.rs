@@ -53,6 +53,31 @@ impl fmt::Display for BBoxError {
 
 impl std::error::Error for BBoxError {}
 
+/// Error types for span validation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SpanError {
+    /// Text content is empty or contains only whitespace.
+    EmptyText,
+    /// Font size is invalid (must be > 0.0).
+    InvalidFontSize,
+    /// Bounding box validation failed.
+    InvalidBBox(BBoxError),
+}
+
+impl fmt::Display for SpanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SpanError::EmptyText => write!(f, "Span text cannot be empty or whitespace-only"),
+            SpanError::InvalidFontSize => write!(f, "Span font size must be greater than 0.0"),
+            SpanError::InvalidBBox(bbox_err) => {
+                write!(f, "Span bounding box validation failed: {}", bbox_err)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SpanError {}
+
 /// A bounding box representing a rectangular region in normalized coordinates.
 ///
 /// All coordinates and dimensions are normalized to the range [0.0, 1.0] where:
@@ -128,6 +153,85 @@ impl BBox {
             y,
             width,
             height,
+        })
+    }
+}
+
+/// A text span representing a contiguous run of text with consistent formatting.
+///
+/// A span is the basic unit of text content in the IR, containing the actual text
+/// along with its bounding box and typographic properties. All coordinates and
+/// dimensions follow the TRANSCRIPT_ARCHITECTURE v4.2 invariants:
+/// - Coordinates normalized to [0.0, 1.0] range
+/// - Top-left origin (y=0 at top, increases downward)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Span {
+    /// The actual text content (must be non-empty and not whitespace-only).
+    pub text: String,
+    /// The bounding box of this span in normalized page coordinates.
+    pub bbox: BBox,
+    /// Font name/family (e.g., "Arial", "Helvetica").
+    pub font_name: String,
+    /// Font size in points (original scale, must be > 0.0).
+    pub font_size: f64,
+    /// Font weight where 400 = normal, 700 = bold, etc.
+    pub font_weight: f64,
+    /// Font color as hex string (e.g., "#000000" for black).
+    pub font_color: String,
+}
+
+impl Span {
+    /// Creates a new text span with the given content, position, and font size.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text content (must not be empty or whitespace-only)
+    /// * `bbox` - Bounding box defining the span's position and size
+    /// * `font_size` - Font size in points (must be > 0.0)
+    ///
+    /// # Default Values
+    ///
+    /// The following fields are set to sensible defaults:
+    /// - `font_name`: "Unknown"
+    /// - `font_weight`: 400 (normal weight)
+    /// - `font_color`: "#000000" (black)
+    ///
+    /// # Errors
+    ///
+    /// Returns `SpanError` if:
+    /// - `text` is empty or contains only whitespace (returns `EmptyText`)
+    /// - `font_size` is <= 0.0 (returns `InvalidFontSize`)
+    /// - The bounding box is invalid (returns `InvalidBBox`)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use conset_pdf_ir::types::{BBox, Span};
+    ///
+    /// let bbox = BBox::new(0.1, 0.2, 0.3, 0.4)?;
+    /// let span = Span::new("Hello World", bbox, 12.0)?;
+    /// assert_eq!(span.text, "Hello World");
+    /// assert_eq!(span.font_size, 12.0);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn new(text: &str, bbox: BBox, font_size: f64) -> Result<Self, SpanError> {
+        // Validate text content
+        if text.trim().is_empty() {
+            return Err(SpanError::EmptyText);
+        }
+
+        // Validate font size
+        if font_size <= 0.0 {
+            return Err(SpanError::InvalidFontSize);
+        }
+
+        Ok(Span {
+            text: text.to_string(),
+            bbox,
+            font_name: "Unknown".to_string(),
+            font_size,
+            font_weight: 400.0,
+            font_color: "#000000".to_string(),
         })
     }
 }

@@ -26,7 +26,7 @@ pub mod validation;
 
 // Re-export main types for convenience
 pub use layout::LayoutTranscript;
-pub use types::{BBox, BBoxError, Document, Element, Page};
+pub use types::{BBox, BBoxError, Document, Element, Page, Span, SpanError};
 pub use validation::Validator;
 
 /// Version of this crate.
