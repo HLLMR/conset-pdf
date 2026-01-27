@@ -75,6 +75,26 @@ impl fmt::Display for SpanError {
 
 impl std::error::Error for SpanError {}
 
+/// A bounding box representing a rectangular region in PDF coordinates (points).
+///
+/// Coordinates are in PDF units (points) with origin at the bottom-left corner:
+/// - (0, 0) is the bottom-left corner of the page
+/// - x increases from left to right
+/// - y increases from bottom to top
+///
+/// This is the input format for PDF extraction before normalization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BoundingBox {
+    /// Left edge of the bounding box in PDF points.
+    pub x: f64,
+    /// Bottom edge of the bounding box in PDF points.
+    pub y: f64,
+    /// Width of the bounding box in PDF points.
+    pub width: f64,
+    /// Height of the bounding box in PDF points.
+    pub height: f64,
+}
+
 /// A bounding box representing a rectangular region in normalized coordinates.
 ///
 /// All coordinates and dimensions are normalized to the range [0.0, 1.0] where:

@@ -26,8 +26,8 @@ pub mod validation;
 
 // Re-export main types for convenience
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
-pub use types::{BBox, BBoxError, Document, Element, Page, Span, SpanError};
-pub use validation::Validator;
+pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};
+pub use validation::{normalize_bbox, NormalizationError, Validator};
 
 /// Version of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
