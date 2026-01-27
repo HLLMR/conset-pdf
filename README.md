@@ -3,6 +3,10 @@
 **Version:** 4.2.0  
 **Status:** 🔵 In Development (Phase 0)
 
+[![CI](https://github.com/your-org/conset-pdf/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/conset-pdf/actions/workflows/ci.yml)
+[![Clippy](https://github.com/your-org/conset-pdf/actions/workflows/clippy.yml/badge.svg)](https://github.com/your-org/conset-pdf/actions/workflows/clippy.yml)
+[![Coverage](https://codecov.io/gh/your-org/conset-pdf/branch/master/graph/badge.svg)](https://codecov.io/gh/your-org/conset-pdf)
+
 ## Overview
 
 Conset PDF is a deterministic-first PDF processing engine for AEC (Architecture, Engineering, Construction) documents. It extracts, parses, and reconstructs structured content from specs, drawings, and submittals with audit trails and reproducible results.
