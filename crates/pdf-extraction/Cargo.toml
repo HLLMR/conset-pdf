@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
+log.workspace = true
 conset-pdf-ir = { workspace = true }
 serde = { workspace = true }
 pdfium-render = { version = "0.8", features = ["image"] }

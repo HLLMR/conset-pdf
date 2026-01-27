@@ -374,6 +374,7 @@ dependencies = [
  "anyhow",
  "conset-pdf-ir",
  "image",
+ "log",
  "pdfium-render",
  "serde",
  "thiserror",

@@ -25,8 +25,10 @@
 //! let page_data = extractor.extract_page(&doc, 0)?;
 //! ```
 
+pub mod error;
 pub mod extractor;
 pub mod types;
 
+pub use error::{ExtractionError, Result};
 pub use extractor::PdfExtractor;
 pub use types::{Document, PageData};

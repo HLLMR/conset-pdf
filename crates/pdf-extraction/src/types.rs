@@ -11,20 +11,26 @@ use serde::{Deserialize, Serialize};
 /// and used to extract individual pages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
-    // Fields to be defined by implementations
+    /// Path to the PDF file
+    pub path: String,
+    /// Number of pages in the document
+    pub page_count: usize,
 }
 
 impl Document {
     /// Creates a new document handle.
     #[must_use]
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(path: String, page_count: usize) -> Self {
+        Self { path, page_count }
     }
 }
 
 impl Default for Document {
     fn default() -> Self {
-        Self::new()
+        Self {
+            path: String::new(),
+            page_count: 0,
+        }
     }
 }
 
