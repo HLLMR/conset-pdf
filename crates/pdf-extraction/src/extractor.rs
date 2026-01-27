@@ -58,6 +58,22 @@ pub trait PdfExtractor {
     ///
     /// Returns an error when the page cannot be read or decoded.
     fn extract_page(&self, doc: &Document, page_index: usize) -> Result<PageData>;
+
+    /// Extracts text from a specific page.
+    ///
+    /// # Arguments
+    ///
+    /// * `doc` - Reference to the document
+    /// * `page_index` - Zero-based page index
+    ///
+    /// # Returns
+    ///
+    /// The extracted text from the page, or an error if extraction fails
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the page index is out of bounds or text extraction fails.
+    fn extract_text(&self, doc: &Document, page_index: usize) -> Result<String>;
 }
 
 /// PDF extractor implementation using Pdfium.
@@ -94,9 +110,31 @@ impl PdfiumExtractor {
             }
         }
 
-        // Try project root directory
+        // Try workspace root (for tests)
+        if let Ok(workspace_root) = env::var("CARGO_WORKSPACE_DIR") {
+            if let Ok(bindings) =
+                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&workspace_root))
+            {
+                return Ok(Pdfium::new(bindings));
+            }
+        }
+
+        // Try current working directory
+        if let Ok(cwd) = env::current_dir() {
+            if let Ok(bindings) =
+                Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(cwd.to_str().unwrap_or(".")))
+            {
+                return Ok(Pdfium::new(bindings));
+            }
+        }
+
+        // Try project root directory (crates/pdf-extraction goes up 2 levels)
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let mut root = std::path::PathBuf::from(manifest_dir);
+        root.pop(); // crates/pdf-extraction
+        root.pop(); // crates
         if let Ok(bindings) =
-            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
+            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(root.to_str().unwrap_or(".")))
         {
             return Ok(Pdfium::new(bindings));
         }
@@ -157,5 +195,38 @@ impl PdfExtractor for PdfiumExtractor {
 
     fn extract_page(&self, _doc: &Document, page_index: usize) -> Result<PageData> {
         Ok(PageData::new(page_index))
+    }
+
+    fn extract_text(&self, doc: &Document, page_index: usize) -> Result<String> {
+        // Check if page index is valid
+        if page_index >= doc.page_count {
+            return Err(crate::error::ExtractionError::page_not_found(page_index));
+        }
+
+        // Load the document to extract text
+        let document = self
+            .pdfium
+            .load_pdf_from_file(&doc.path, None)
+            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to load document for text extraction: {}", e)))?;
+
+        // Convert page_index to u16 for pdfium-render API
+        let page_index_u16: u16 = page_index as u16;
+
+        // Get the page
+        let page = document
+            .pages()
+            .get(page_index_u16)
+            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to get page {}: {}", page_index, e)))?;
+
+        // Extract text from the page
+        let text = page
+            .text()
+            .map_err(|e| crate::error::ExtractionError::pdf_error(format!("Failed to extract text: {}", e)))?
+            .all();
+
+        let text_len = text.len();
+        debug!("Extracted {} chars from page {}", text_len, page_index);
+
+        Ok(text)
     }
 }

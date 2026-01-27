@@ -1,0 +1,6 @@
+# PDFium uses thread-local storage and doesn't support parallel test execution
+# Note: To run tests successfully, use:
+#   cargo test -- --test-threads=1
+# This is required because pdfium-render maintains thread-local state that
+# conflicts with parallel test execution. Tests will panic with "explicit panic"
+# messages if run with multiple threads.

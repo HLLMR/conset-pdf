@@ -28,12 +28,21 @@ pub enum ExtractionError {
     #[error("PDF processing error: {0}")]
     PdfError(String),
 
+    /// Page index out of bounds.
+    #[error("Page not found: index {0} out of bounds")]
+    PageNotFound(usize),
+
     /// Generic error with custom message.
     #[error("Extraction error: {0}")]
     Other(String),
 }
 
 impl ExtractionError {
+    /// Creates a new page not found error.
+    pub fn page_not_found(index: usize) -> Self {
+        Self::PageNotFound(index)
+    }
+
     /// Creates a new file not found error.
     pub fn file_not_found(path: impl Into<String>) -> Self {
         Self::FileNotFound(path.into())
