@@ -361,6 +361,7 @@ name = "conset-pdf-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "conset-pdf-extraction",
  "conset-pdf-ir",
  "env_logger",
  "log",
