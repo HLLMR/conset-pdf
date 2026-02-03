@@ -4,12 +4,12 @@
 //! End-to-End Integration Tests for Conset PDF
 //!
 //! This test suite validates the complete PDF processing pipeline from loading
-//! PDFs through to generating and serializing LayoutTranscripts.
+//! PDFs through to generating and serializing `LayoutTranscript`s.
 //!
 //! ## Phase 0 Definition of Done
 //!
 //! These tests validate all Phase 0 requirements:
-//! - ✓ PDFium loads PDF documents
+//! - ✓ `PDFium` loads PDF documents
 //! - ✓ Text extraction works
 //! - ✓ Transcript creation and validation
 //! - ✓ JSON serialization/deserialization
@@ -18,23 +18,17 @@
 //! Run with: `cargo test --test end_to_end -- --nocapture`
 
 use conset_pdf_extraction::{PdfExtractor, PdfiumExtractor};
-use conset_pdf_ir::{
-    validate_transcript, BBox, LayoutTranscript, Page, Span, TranscriptMetadata,
-};
+use conset_pdf_ir::{validate_transcript, BBox, LayoutTranscript, Page, Span, TranscriptMetadata};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 fn fixture_path(filename: &str) -> PathBuf {
     let binding = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = binding
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap();
+    let workspace_root = binding.parent().unwrap().parent().unwrap();
     workspace_root.join("tests/fixtures/tier1").join(filename)
 }
 
-/// Test 1: Load PDF successfully using PdfiumExtractor
+/// Test 1: Load PDF successfully using `PdfiumExtractor`
 #[test]
 fn test_e2e_loads_pdf_successfully() {
     let fixture_path = fixture_path("simple.pdf");
@@ -42,9 +36,7 @@ fn test_e2e_loads_pdf_successfully() {
     let extractor = PdfiumExtractor::new();
 
     // Load the PDF
-    let doc = extractor
-        .load_document(&fixture_path.to_string_lossy())
-        .expect("Failed to load PDF");
+    let doc = extractor.load_document(&fixture_path.to_string_lossy()).expect("Failed to load PDF");
 
     // Get page count
     let page_count = extractor.get_page_count(&doc);
@@ -66,9 +58,7 @@ fn test_e2e_extracts_text_from_pdf() {
     let extractor = PdfiumExtractor::new();
 
     // Load the PDF
-    let doc = extractor
-        .load_document(&fixture_path.to_string_lossy())
-        .expect("Failed to load PDF");
+    let doc = extractor.load_document(&fixture_path.to_string_lossy()).expect("Failed to load PDF");
     let page_count = extractor.get_page_count(&doc);
 
     // Extract text from all pages
@@ -76,9 +66,8 @@ fn test_e2e_extracts_text_from_pdf() {
     let mut page_texts: Vec<String> = Vec::new();
 
     for page_index in 0..page_count {
-        let text = extractor
-            .extract_text(&doc, page_index)
-            .expect("Failed to extract text from page");
+        let text =
+            extractor.extract_text(&doc, page_index).expect("Failed to extract text from page");
         total_text_length += text.len();
         page_texts.push(text);
     }
@@ -92,10 +81,7 @@ fn test_e2e_extracts_text_from_pdf() {
     }
 
     // Assertions
-    assert!(
-        total_text_length > 0,
-        "Total extracted text should be non-empty"
-    );
+    assert!(total_text_length > 0, "Total extracted text should be non-empty");
 }
 
 /// Test 3: Create and validate a transcript with proper coordinate normalization
@@ -121,8 +107,8 @@ fn test_e2e_creates_valid_transcript() {
     page.add_span(span2).expect("Failed to add span2");
 
     // Create transcript
-    let transcript = LayoutTranscript::new(vec![page], metadata)
-        .expect("Failed to create transcript");
+    let transcript =
+        LayoutTranscript::new(vec![page], metadata).expect("Failed to create transcript");
 
     // Validate the transcript
     let validation_result = validate_transcript(&transcript);
@@ -135,10 +121,7 @@ fn test_e2e_creates_valid_transcript() {
     println!("  Validation result: {:?}", validation_result);
 
     // Assertions
-    assert!(
-        validation_result.is_ok(),
-        "Transcript validation should pass"
-    );
+    assert!(validation_result.is_ok(), "Transcript validation should pass");
     assert_eq!(transcript.page_count(), 1, "Transcript should have 1 page");
     assert_eq!(span_count, 2, "Page should have 2 spans");
 }
@@ -159,8 +142,8 @@ fn test_e2e_serializes_transcript_to_json() {
 
     page.add_span(span).expect("Failed to add span");
 
-    let transcript = LayoutTranscript::new(vec![page], metadata)
-        .expect("Failed to create transcript");
+    let transcript =
+        LayoutTranscript::new(vec![page], metadata).expect("Failed to create transcript");
 
     // Serialize to JSON
     let json_result = transcript.to_json();
@@ -170,26 +153,17 @@ fn test_e2e_serializes_transcript_to_json() {
     match &json_result {
         Ok(json) => {
             println!("  JSON length: {} bytes", json.len());
-            println!(
-                "  JSON preview: {}",
-                &json[..std::cmp::min(100, json.len())]
-            );
+            println!("  JSON preview: {}", &json[..std::cmp::min(100, json.len())]);
         }
         Err(e) => println!("  Serialization error: {}", e),
     }
 
     // Assertions
-    assert!(
-        json_result.is_ok(),
-        "Transcript serialization should succeed"
-    );
+    assert!(json_result.is_ok(), "Transcript serialization should succeed");
 
     let json = json_result.unwrap();
-    assert!(json.len() > 0, "JSON should not be empty");
-    assert!(
-        json.contains("\"page_index\":0"),
-        "JSON should contain page index"
-    );
+    assert!(!json.is_empty(), "JSON should not be empty");
+    assert!(json.contains("\"page_index\":0"), "JSON should contain page index");
 
     // Write to debug output file if debug directory exists
     let debug_dir = "target/debug";
@@ -221,13 +195,11 @@ fn test_e2e_deserializes_transcript_from_json() {
     page.add_span(span1).expect("Failed to add span1");
     page.add_span(span2).expect("Failed to add span2");
 
-    let original_transcript = LayoutTranscript::new(vec![page], metadata)
-        .expect("Failed to create transcript");
+    let original_transcript =
+        LayoutTranscript::new(vec![page], metadata).expect("Failed to create transcript");
 
     // Serialize to JSON
-    let json = original_transcript
-        .to_json()
-        .expect("Failed to serialize transcript");
+    let json = original_transcript.to_json().expect("Failed to serialize transcript");
 
     // Deserialize from JSON
     let deserialized_transcript =
@@ -235,22 +207,10 @@ fn test_e2e_deserializes_transcript_from_json() {
 
     // Debug output
     println!("[test_e2e_deserializes_transcript_from_json]");
-    println!(
-        "  Original page count: {}",
-        original_transcript.page_count()
-    );
-    println!(
-        "  Deserialized page count: {}",
-        deserialized_transcript.page_count()
-    );
-    println!(
-        "  Original span count: {}",
-        original_transcript.pages()[0].spans().len()
-    );
-    println!(
-        "  Deserialized span count: {}",
-        deserialized_transcript.pages()[0].spans().len()
-    );
+    println!("  Original page count: {}", original_transcript.page_count());
+    println!("  Deserialized page count: {}", deserialized_transcript.page_count());
+    println!("  Original span count: {}", original_transcript.pages()[0].spans().len());
+    println!("  Deserialized span count: {}", deserialized_transcript.pages()[0].spans().len());
 
     // Assertions - check structural equality
     assert_eq!(
@@ -269,28 +229,23 @@ fn test_e2e_deserializes_transcript_from_json() {
     );
 
     // Check that each span matches
-    for (i, (orig_span, deser_span)) in original_spans
-        .iter()
-        .zip(deserialized_spans.iter())
-        .enumerate()
+    for (i, (orig_span, deser_span)) in
+        original_spans.iter().zip(deserialized_spans.iter()).enumerate()
     {
-        assert_eq!(
-            orig_span.text, deser_span.text,
-            "Span {} text should match",
-            i
-        );
-        assert_eq!(
-            orig_span.bbox.x, deser_span.bbox.x,
+        assert_eq!(orig_span.text, deser_span.text, "Span {} text should match", i);
+        // Use approximate equality for floats
+        assert!(
+            (orig_span.bbox.x - deser_span.bbox.x).abs() < 1e-6,
             "Span {} bbox.x should match",
             i
         );
-        assert_eq!(
-            orig_span.bbox.y, deser_span.bbox.y,
+        assert!(
+            (orig_span.bbox.y - deser_span.bbox.y).abs() < 1e-6,
             "Span {} bbox.y should match",
             i
         );
-        assert_eq!(
-            orig_span.font_size, deser_span.font_size,
+        assert!(
+            (orig_span.font_size - deser_span.font_size).abs() < 1e-6,
             "Span {} font_size should match",
             i
         );
@@ -313,24 +268,21 @@ fn test_e2e_full_pipeline_is_deterministic() {
 
         // Add deterministic spans
         for i in 0..3 {
-            let x = 0.1 + (i as f64) * 0.1;
+            let x = 0.1 + f64::from(i) * 0.1;
             let bbox = BBox::new(x, 0.1, 0.15, 0.05)
                 .unwrap_or_else(|_| panic!("Failed to create bbox {}", i));
             let text = format!("Deterministic Text {}", i);
             let span = Span::new(&text, bbox, 12.0)
                 .unwrap_or_else(|_| panic!("Failed to create span {}", i));
-            page.add_span(span)
-                .unwrap_or_else(|_| panic!("Failed to add span {}", i));
+            page.add_span(span).unwrap_or_else(|_| panic!("Failed to add span {}", i));
         }
 
         // Create transcript
-        let transcript = LayoutTranscript::new(vec![page], metadata)
-            .expect("Failed to create transcript");
+        let transcript =
+            LayoutTranscript::new(vec![page], metadata).expect("Failed to create transcript");
 
         // Serialize to JSON
-        transcript
-            .to_json()
-            .expect("Failed to serialize transcript")
+        transcript.to_json().expect("Failed to serialize transcript")
     };
 
     // Run the pipeline twice
@@ -348,34 +300,29 @@ fn test_e2e_full_pipeline_is_deterministic() {
     // Verify both are valid JSON by deserializing
     let transcript_1 =
         LayoutTranscript::from_json(&json_1).expect("First JSON should deserialize successfully");
-    let transcript_2 = LayoutTranscript::from_json(&json_2)
-        .expect("Second JSON should deserialize successfully");
+    let transcript_2 =
+        LayoutTranscript::from_json(&json_2).expect("Second JSON should deserialize successfully");
 
     // Verify structural equality (page count, span count, span content)
-    assert_eq!(
-        transcript_1.page_count(),
-        transcript_2.page_count(),
-        "Page counts should match"
-    );
+    assert_eq!(transcript_1.page_count(), transcript_2.page_count(), "Page counts should match");
 
     let spans_1 = transcript_1.pages()[0].spans();
     let spans_2 = transcript_2.pages()[0].spans();
 
-    assert_eq!(
-        spans_1.len(),
-        spans_2.len(),
-        "Span counts should match"
-    );
+    assert_eq!(spans_1.len(), spans_2.len(), "Span counts should match");
 
     for (i, (span1, span2)) in spans_1.iter().zip(spans_2.iter()).enumerate() {
         assert_eq!(span1.text, span2.text, "Span {} text should match", i);
         assert_eq!(span1.bbox, span2.bbox, "Span {} bbox should match", i);
-        assert_eq!(
-            span1.font_size, span2.font_size,
+        // Use approximate equality for floats
+        assert!(
+            (span1.font_size - span2.font_size).abs() < 1e-6,
             "Span {} font_size should match",
             i
         );
     }
 
-    println!("  ✓ Pipeline produces structurally identical output (deterministic excluding timestamp)");
+    println!(
+        "  ✓ Pipeline produces structurally identical output (deterministic excluding timestamp)"
+    );
 }
