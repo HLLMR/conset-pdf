@@ -2,7 +2,7 @@
 
 **Deterministic-first, compiler-model system for extracting and reconstructing structured content from AEC PDFs.**
 
-**Version:** 4.2.0 | **Status:** 🔵 Phase 0 (Project Scaffolding) | **License:** Apache-2.0
+**Version:** 4.2.1 | **Status:** 🔵 Phase 0 (Closeout Complete) | **License:** Apache-2.0
 
 ---
 
@@ -68,29 +68,25 @@ PDF Input
 Audit Trail (JSONL events + visual overlays)
 ```
 
-### Crate Structure
+### Workspace Structure
 
 ```
+apps/
+├── backend-cli/         # Workflow entrypoint and contracts↔engine translation layer
+└── desktop-gui/         # Tauri desktop surface (frontend wiring deferred)
+
 crates/
-├── engine/              # Main binary and CLI
-│   ├── main.rs         # Entry point
-│   ├── cli/            # Command definitions
-│   └── workflows/      # Orchestration logic
-│
-├── ir/                 # Layout IR (shared foundation)
-│   ├── transcript.rs   # LayoutTranscript: raw PDF geometry + text
-│   ├── layout.rs       # Layout tree and spatial relationships
-│   ├── types.rs        # Core types (BBox, Span, Page)
-│   └── validation.rs   # Invariant verification
-│
-├── audit/              # Audit framework (shared)
-│   ├── event.rs        # AuditEvent: decision logging
-│   ├── bundle.rs       # AuditBundle: complete run artifacts
-│   └── writer.rs       # Persistence (JSONL + overlays)
-│
-└── pdf-extraction/     # PDF library wrapper
-    ├── extractor.rs    # PDFium bindings
-    └── types.rs        # PDF primitives
+├── contracts/           # Canonical request/response + audit schemas
+├── workflows/           # Workflow orchestration contracts and stubs
+├── standards-data/      # Standards dataset scaffolding
+├── engine/              # Deterministic pipeline wrappers and stage orchestration
+├── ir/                  # Layout IR and validation semantics
+├── audit/               # Audit event bundle models and persistence
+└── pdf-extraction/      # PDF loading/text extraction implementation details
+
+tests/
+├── corpus/              # Torture corpus fixtures
+└── integration/         # Cross-boundary integration scaffolds
 ```
 
 ### Key Design Principles
@@ -103,7 +99,7 @@ crates/
 6. **Chrome Preservation:** Metadata (project ID, section numbers, dates) extracted and reapplied.
 7. **Partial Success:** Extract what is certain; flag 20% that needs review instead of discarding 100%.
 
-See [docs/ARCHITECTURE_v4_2.md](docs/ARCHITECTURE_v4_2.md) for complete system design.
+See [docs/v4/ARCHITECTURE_v4_2.md](docs/v4/ARCHITECTURE_v4_2.md) for complete system design.
 
 ---
 
@@ -150,13 +146,13 @@ cargo test --test '*' --workspace
 
 ```bash
 # Display CLI help
-cargo run --bin conset-pdf -- --help
+cargo run --bin backend-cli -- --help
 
 # Extract PDF (example)
-cargo run --bin conset-pdf -- extract --input sample.pdf --output output/
+cargo run --bin backend-cli -- extract --input sample.pdf --output output/
 
 # Run engine tests
-cargo run --test end_to_end_test
+cargo test -p conset-pdf-engine --test end_to_end_test
 ```
 
 See [docs/SETUP.md](docs/SETUP.md) for detailed environment configuration and troubleshooting.
@@ -255,7 +251,7 @@ mod tests {
 
 **Golden files:** Regression tests use snapshot files. Regenerate with `cargo test -- --nocapture`.
 
-See [docs/DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md) for full testing standards.
+See [docs/v4/DEV_STANDARDS_v4_2.md](docs/v4/DEV_STANDARDS_v4_2.md) for full testing standards.
 
 ### Code Review Checklist
 
@@ -289,10 +285,11 @@ Comprehensive documentation lives in `docs/`:
 
 | Document | Purpose |
 |----------|---------|
-| [MASTER_PLAN_v4_2.md](docs/MASTER_PLAN_v4_2.md) | North Star vision, non-negotiables, roadmap, implementation phases |
-| [ARCHITECTURE_v4_2.md](docs/ARCHITECTURE_v4_2.md) | System design, crate structure, compiler pipeline, type system |
-| [DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md) | Coding standards, testing requirements, Git workflow, code review |
-| [AEC_STANDARDS_v4_2.md](docs/AEC_STANDARDS_v4_2.md) | AEC domain knowledge, specs/drawings/submittals, UDS classification |
+| [DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md) | Canonical documentation authority and navigation entrypoint |
+| [MASTER_PLAN_v4.md](docs/v4/MASTER_PLAN_v4.md) | North Star vision, non-negotiables, roadmap, implementation phases |
+| [ARCHITECTURE_v4_2.md](docs/v4/ARCHITECTURE_v4_2.md) | System design, crate structure, compiler pipeline, type system |
+| [DEV_STANDARDS_v4_2.md](docs/v4/DEV_STANDARDS_v4_2.md) | Coding standards, testing requirements, Git workflow, code review |
+| [AEC_STANDARDS_v4_2.md](docs/v4/AEC_STANDARDS_v4_2.md) | AEC domain knowledge, specs/drawings/submittals, UDS classification |
 | [TRANSCRIPT_ARCHITECTURE_v4_2.md](docs/TRANSCRIPT_ARCHITECTURE_v4_2.md) | LayoutTranscript format, geometry encoding, invariants |
 | [SETUP.md](docs/SETUP.md) | Environment setup, dependency installation, troubleshooting |
 | [PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md](docs/dev/PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md) | Detailed Phase 0 task breakdown |
@@ -316,7 +313,7 @@ crates/
     └── text_extraction_test.rs           # Raw text extraction
 
 tests/
-├── fixtures/                             # Test PDFs
+├── corpus/                               # Test PDFs
 │   ├── tier1/                            # Simple, well-formed (< 20 pages)
 │   ├── tier2/                            # Moderate complexity (20–100 pages)
 │   ├── tier3/                            # Complex edge cases (100+ pages, unusual layouts)
@@ -326,7 +323,7 @@ tests/
 
 ### Torture Corpus
 
-The `tests/fixtures/` directory contains a graduated corpus of real AEC PDFs for regression testing:
+The `tests/corpus/` directory contains a graduated corpus of real AEC PDFs for regression testing:
 
 - **Tier 1:** Well-formed specs and drawings; simple layouts
 - **Tier 2:** Complex layouts, mixed formats, edge cases
@@ -364,7 +361,7 @@ We welcome contributions that maintain Conset's core values: determinism, correc
 ### Contribution Guidelines
 
 1. **Start with an issue:** Discuss proposed changes before coding
-2. **Follow standards:** Adhere to [DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md)
+2. **Follow standards:** Adhere to [DEV_STANDARDS_v4_2.md](docs/v4/DEV_STANDARDS_v4_2.md)
 3. **Test thoroughly:** Unit + integration tests required; aim for 80%+ coverage
 4. **Write clear commits:** Use format specified above
 5. **Document APIs:** Public methods need doc comments with examples
@@ -437,4 +434,4 @@ Conset PDF is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) 
 
 ---
 
-**Last Updated:** January 28, 2026 | **Maintained By:** Development Team
+**Last Updated:** March 23, 2026 | **Maintained By:** Development Team

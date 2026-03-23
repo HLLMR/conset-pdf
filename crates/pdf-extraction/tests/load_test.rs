@@ -23,7 +23,7 @@ fn get_fixture_path(relative_path: &str) -> String {
 #[test]
 fn test_load_document_accepts_valid_pdf() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
 
     let result = extractor.load_document(&path);
 
@@ -65,7 +65,7 @@ fn test_load_document_rejects_invalid_path() {
 #[test]
 fn test_load_document_rejects_non_pdf_file() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/test.txt");
+    let path = get_fixture_path("tests/corpus/tier1/test.txt");
 
     let result = extractor.load_document(&path);
 
@@ -85,7 +85,7 @@ fn test_load_document_rejects_non_pdf_file() {
 #[test]
 fn test_load_document_provides_page_access() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
 
     let result = extractor.load_document(&path);
     assert!(result.is_ok(), "Expected Ok, got {:?}", result);

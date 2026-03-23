@@ -38,11 +38,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-build-
 
-      - name: Build
+      - name: Build workspace targets
         run: cargo build --workspace --all-targets
 
-      - name: Test
+      - name: Build backend-cli binary
+        run: cargo build --bin backend-cli
+
+      - name: Build desktop-gui library
+        run: cargo build -p conset-pdf-desktop-gui --lib
+
+      - name: Test workspace targets
         run: cargo test --workspace --all-targets --exclude conset-pdf-extraction
+
+      - name: Test desktop-gui library
+        run: cargo test -p conset-pdf-desktop-gui --lib
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

@@ -1,0 +1,24 @@
+[package]
+name = "conset-pdf-backend-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "backend-cli"
+path = "src/main.rs"
+
+[dependencies]
+conset-pdf-engine.workspace = true
+conset-pdf-contracts.workspace = true
+conset-pdf-audit.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true

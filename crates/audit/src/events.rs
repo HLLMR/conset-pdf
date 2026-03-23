@@ -1,73 +1,46 @@
 //! Audit event definitions and types.
 //!
-//! This module defines the event types that can occur during PDF processing
-//! and the structure for recording them with full context.
+//! This module re-exports [`conset_pdf_contracts::AuditEventData`] as the
+//! canonical set of typed event payloads and wraps each payload in an
+//! [`AuditEvent`] that attaches a wall-clock timestamp for storage ordering.
+//!
+//! # Alignment with contracts
+//!
+//! [`AuditEventData`] is a closed enum defined in `crates/contracts` and covers
+//! all events described in Phase D migration M-003:
+//! `SessionStarted`, `SessionEnded`, `OperationStarted`, `OperationEnded`,
+//! `GateEvaluated`, `FeatureDisabled`.
+//!
+//! Use the enum variants directly instead of string constants to ensure
+//! exhaustive matching across the codebase.
 
 use chrono::{DateTime, Utc};
+use conset_pdf_contracts::AuditEventData;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-/// An audit event recording an operation on a PDF document.
+/// An audit event recording a typed lifecycle occurrence with a wall-clock timestamp.
 ///
-/// Each event captures a point-in-time record of what happened, when it happened,
-/// and relevant metadata about the operation.
+/// The `data` field carries the structured payload; see [`AuditEventData`] for
+/// the full set of recognised variants and their fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEvent {
-    /// Timestamp when the event occurred
+    /// Wall-clock time when the event was recorded (UTC).
     pub timestamp: DateTime<Utc>,
 
-    /// Type/classification of the event
-    pub event_type: String,
-
-    /// Additional context and data about the event
-    pub metadata: Value,
+    /// Typed event payload aligned to the contracts schema.
+    pub data: AuditEventData,
 }
 
 impl AuditEvent {
-    /// Creates a new audit event with the current timestamp.
-    ///
-    /// # Arguments
-    ///
-    /// * `event_type` - Classification of the event (e.g., `extraction_started`)
-    /// * `metadata` - JSON object containing event-specific data
-    pub fn new(event_type: impl Into<String>, metadata: Value) -> Self {
-        Self { timestamp: Utc::now(), event_type: event_type.into(), metadata }
+    /// Creates a new audit event stamped with the current UTC time.
+    #[must_use]
+    pub fn new(data: AuditEventData) -> Self {
+        Self { timestamp: Utc::now(), data }
     }
 
-    /// Creates an event with a specific timestamp.
-    ///
-    /// # Arguments
-    ///
-    /// * `timestamp` - When the event occurred
-    /// * `event_type` - Classification of the event
-    /// * `metadata` - Event-specific data
-    pub fn with_timestamp(
-        timestamp: DateTime<Utc>,
-        event_type: impl Into<String>,
-        metadata: Value,
-    ) -> Self {
-        Self { timestamp, event_type: event_type.into(), metadata }
+    /// Creates an audit event with an explicit timestamp (useful for replays and tests).
+    #[must_use]
+    pub fn with_timestamp(timestamp: DateTime<Utc>, data: AuditEventData) -> Self {
+        Self { timestamp, data }
     }
-}
-
-/// Common event types for audit trails.
-pub mod event_types {
-    /// Extraction operation started
-    pub const EXTRACTION_STARTED: &str = "extraction_started";
-    /// Extraction operation completed
-    pub const EXTRACTION_COMPLETED: &str = "extraction_completed";
-    /// Extraction operation failed
-    pub const EXTRACTION_FAILED: &str = "extraction_failed";
-
-    /// Validation passed
-    pub const VALIDATION_PASSED: &str = "validation_passed";
-    /// Validation failed
-    pub const VALIDATION_FAILED: &str = "validation_failed";
-
-    /// Processing operation started
-    pub const PROCESSING_STARTED: &str = "processing_started";
-    /// Processing operation completed
-    pub const PROCESSING_COMPLETED: &str = "processing_completed";
-    /// Processing operation failed
-    pub const PROCESSING_FAILED: &str = "processing_failed";
 }

@@ -30,8 +30,8 @@ impl Processor {
     ///
     /// Returns an error if processing or validation fails.
     pub fn process(&self, transcript: LayoutTranscript) -> Result<LayoutTranscript> {
-        // Processing logic to be implemented
-        Ok(transcript)
+        let transcript = crate::pipeline::parsing::run(transcript)?;
+        crate::pipeline::optimization::run(transcript)
     }
 }
 

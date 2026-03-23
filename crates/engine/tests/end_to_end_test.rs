@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 fn fixture_path(filename: &str) -> PathBuf {
     let binding = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = binding.parent().unwrap().parent().unwrap();
-    workspace_root.join("tests/fixtures/tier1").join(filename)
+    workspace_root.join("tests/corpus/tier1").join(filename)
 }
 
 /// Test 1: Load PDF successfully using `PdfiumExtractor`
@@ -90,7 +90,7 @@ fn test_e2e_creates_valid_transcript() {
     let _fixture_path = fixture_path("simple.pdf");
 
     // Create metadata for the transcript
-    let metadata = TranscriptMetadata::new("tests/fixtures/tier1/simple.pdf", 1)
+    let metadata = TranscriptMetadata::new("tests/corpus/tier1/simple.pdf", 1)
         .expect("Failed to create metadata");
 
     // Create a page with some content
@@ -132,7 +132,7 @@ fn test_e2e_serializes_transcript_to_json() {
     let _fixture_path = fixture_path("simple.pdf");
 
     // Create metadata and transcript
-    let metadata = TranscriptMetadata::new("tests/fixtures/tier1/simple.pdf", 1)
+    let metadata = TranscriptMetadata::new("tests/corpus/tier1/simple.pdf", 1)
         .expect("Failed to create metadata");
 
     let mut page = Page::new(0, 612.0, 792.0).expect("Failed to create page");
@@ -181,7 +181,7 @@ fn test_e2e_deserializes_transcript_from_json() {
     let _fixture_path = fixture_path("simple.pdf");
 
     // Create original transcript
-    let metadata = TranscriptMetadata::new("tests/fixtures/tier1/simple.pdf", 1)
+    let metadata = TranscriptMetadata::new("tests/corpus/tier1/simple.pdf", 1)
         .expect("Failed to create metadata");
 
     let mut page = Page::new(0, 612.0, 792.0).expect("Failed to create page");
@@ -260,7 +260,7 @@ fn test_e2e_full_pipeline_is_deterministic() {
     // Helper function to run a full pipeline
     let run_pipeline = || -> String {
         // Create metadata
-        let metadata = TranscriptMetadata::new("tests/fixtures/tier1/simple.pdf", 1)
+        let metadata = TranscriptMetadata::new("tests/corpus/tier1/simple.pdf", 1)
             .expect("Failed to create metadata");
 
         // Create page

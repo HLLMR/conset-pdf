@@ -21,7 +21,7 @@ fn get_fixture_path(relative_path: &str) -> String {
 #[test]
 fn test_page_count_returns_correct_count() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -35,7 +35,7 @@ fn test_page_count_returns_correct_count() {
 #[test]
 fn test_page_count_returns_positive_for_valid_pdf() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -48,7 +48,7 @@ fn test_page_count_returns_positive_for_valid_pdf() {
 #[test]
 fn test_page_count_handles_single_page_pdf() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -62,7 +62,7 @@ fn test_page_count_handles_single_page_pdf() {
 fn test_page_count_handles_multi_page_pdf() {
     let extractor = PdfiumExtractor::new();
     // Using a known multi-page PDF from the fixtures
-    let path = get_fixture_path("tests/fixtures/tier1/DWG_P&W_UTD_MECH_ORG.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/DWG_P&W_UTD_MECH_ORG.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load multi-page PDF: {:?}", result);
@@ -80,7 +80,7 @@ fn test_page_count_handles_multi_page_pdf() {
 #[test]
 fn test_page_count_is_consistent_on_reload() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
 
     // Load the same PDF twice
     let result1 = extractor.load_document(&path);

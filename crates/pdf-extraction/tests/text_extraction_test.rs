@@ -22,7 +22,7 @@ fn get_fixture_path(relative_path: &str) -> String {
 #[test]
 fn test_extract_text_returns_nonempty_string() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -38,7 +38,7 @@ fn test_extract_text_returns_nonempty_string() {
 #[test]
 fn test_extract_text_contains_expected_content() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -60,7 +60,7 @@ fn test_extract_text_contains_expected_content() {
 #[test]
 fn test_extract_text_rejects_invalid_page_index() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -91,7 +91,7 @@ fn test_extract_text_rejects_invalid_page_index() {
 #[test]
 fn test_extract_text_handles_page_zero() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -105,7 +105,7 @@ fn test_extract_text_handles_page_zero() {
 #[test]
 fn test_extract_text_is_deterministic() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);
@@ -127,7 +127,7 @@ fn test_extract_text_is_deterministic() {
 #[test]
 fn test_extract_text_handles_empty_page() {
     let extractor = PdfiumExtractor::new();
-    let path = get_fixture_path("tests/fixtures/tier1/simple.pdf");
+    let path = get_fixture_path("tests/corpus/tier1/simple.pdf");
     let result = extractor.load_document(&path);
 
     assert!(result.is_ok(), "Failed to load simple.pdf: {:?}", result);

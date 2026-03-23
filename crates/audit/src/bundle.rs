@@ -68,7 +68,7 @@ impl Default for AuditBundle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use conset_pdf_contracts::AuditEventData;
 
     #[test]
     fn test_bundle_creation() {
@@ -79,7 +79,12 @@ mod tests {
     #[test]
     fn test_add_event() {
         let mut bundle = AuditBundle::new();
-        let event = AuditEvent::new("test_event", json!({}));
+        let event = AuditEvent::new(AuditEventData::SessionStarted {
+            session_id: "test-session".into(),
+            started_at_utc: "2026-01-01T00:00:00Z".into(),
+            contracts_version: "0.1.0".into(),
+            engine_version: None,
+        });
         bundle.add_event(event);
         assert_eq!(bundle.event_count(), 1);
     }

@@ -1,5 +1,9 @@
 # PDF Library Evaluation
 
+**Doc Status Tag:** Archived
+
+This evaluation is retained as historical decision support and is non-authoritative for active roadmap commitments.
+
 Scope: compare candidate libraries for Conset PDF extraction with focus on deterministic output, bounding-box precision, and production stability.
 
 ## Summary Table

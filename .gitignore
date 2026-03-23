@@ -5,7 +5,7 @@ debug.log
 
 # PDF test fixtures (managed by Git LFS)
 *.pdf
-!tests/fixtures/*.pdf
+!tests/corpus/*.pdf
 
 # IDE and editor files
 .vscode/
@@ -28,6 +28,7 @@ Desktop.ini
 # Output directories
 /output/
 /tmp/
+/audit_output/
 
 # Temporary files
 *.tmp

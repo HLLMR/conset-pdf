@@ -1,5 +1,26 @@
 # Conset PDF Development Setup
 
+**Doc Status Tag:** Implemented
+
+This setup guide is an active supporting document under the governance rules in `DOC_GOVERNANCE.md`.
+
+## Quick Verification Commands (Imported)
+
+Use these commands after setup to verify baseline operation behavior:
+
+```bash
+# Run all tests
+cargo test
+
+# Run engine tests only
+cargo test -p conset-pdf-engine
+
+# Validate extraction crate
+cargo test -p conset-pdf-extraction
+```
+
+For workflow-style operations, use analyze-first execution patterns where available so planning artifacts are reviewed before file mutation.
+
 ## Development Prerequisites
 
 ### Required Software

@@ -21,3 +21,9 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings -W clippy::pedantic
+
+      - name: Run clippy for backend-cli
+        run: cargo clippy -p conset-pdf-backend-cli --all-targets -- -D warnings -W clippy::pedantic
+
+      - name: Run clippy for desktop-gui
+        run: cargo clippy -p conset-pdf-desktop-gui --all-targets -- -D warnings -W clippy::pedantic

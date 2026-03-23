@@ -2,7 +2,11 @@ name: Coverage
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   coverage:
@@ -17,15 +21,21 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
 
       - name: Generate coverage
-        run: cargo tarpaulin --workspace --out Html --output-dir coverage --exclude conset-pdf-extraction --timeout 300
+        run: cargo tarpaulin --workspace --out Xml --out Lcov --output-dir coverage --exclude conset-pdf-extraction --timeout 300
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage/
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
-          files: ./coverage/index.html
+          files: ./coverage/cobertura.xml,./coverage/lcov.info
           flags: unittests
-          name: codecov-umbrella
+          name: conset-pdf-coverage
           fail_ci_if_error: false

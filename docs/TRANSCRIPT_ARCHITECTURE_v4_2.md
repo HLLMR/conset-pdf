@@ -4,6 +4,7 @@
 **Date:** January 23, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
+**Doc Status Tag:** Implemented
 **Alignment:** ARCHITECTURE V4.2 + DEV_STANDARDS V4.2
 
 ---
@@ -11,6 +12,8 @@
 ## Overview
 
 This document defines the **LayoutTranscript** - the core intermediate representation (IR) for PDF extraction in Conset PDF. The LayoutTranscript is the **backend-agnostic contract** that all PDF extraction libraries must satisfy.
+
+This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNANCE.md`.
 
 **Scope:**
 - LayoutTranscript structure (spans, pages, metadata)
@@ -33,6 +36,19 @@ This document defines the **LayoutTranscript** - the core intermediate represent
 4. [DocumentContext Integration](#documentcontext-integration)
 5. [Determinism Requirements](#determinism-requirements)
 6. [Validation](#validation)
+
+---
+
+## Backend Quality Tiers (Imported)
+
+Backend implementations may differ in extraction fidelity. Canonical transcript architecture treats this as an explicit quality-tier concern.
+
+Rules:
+
+1. Backends must declare quality tier and capability limits (bbox fidelity, rotation handling, table robustness).
+2. Low-fidelity fallback backends are allowed only for explicitly supported non-critical paths.
+3. Deterministic canonicalization requirements remain identical across all enabled backends.
+4. If a fallback cannot satisfy required quality gates for an operation, fail explicitly instead of silently degrading output quality.
 
 ---
 
@@ -778,6 +794,23 @@ fn validate_page(page: &LayoutPage) -> Result<()> {
   ]
 }
 ```
+
+---
+
+## Quality Gate Thresholds (Imported)
+
+Transcript acceptance requires passing all four quality gates. These thresholds are architectural baselines; per-document-class tuning may narrow but not eliminate any gate.
+
+| Gate | Metric | Canonical Threshold | Failure Condition |
+|---|---|---|---|
+| Text Presence | Characters per page | >= 50 | Page has insufficient text for reliable analysis |
+| Encoding Integrity | Replacement character (U+FFFD) ratio | <= 0.05 | Encoding or OCR failure detected |
+| Ordering Sanity | Source order vs. geometric y/x sort agreement | >= 0.80 | Span ordering is scrambled |
+| Aggregate Confidence | Overall extraction confidence | >= 0.85 | Transcript does not meet quality bar for production use |
+
+Quality scoring must report per-gate failure diagnostics, not a pass/fail aggregate. Legitimately text-sparse pages (separators, cover pages) must not be treated as universal quality failures.
+
+Quality-driven extractor fallback (auto-switching to a secondary extractor when the primary scores below gate) is an architectural requirement, not an optional optimization.
 
 ---
 

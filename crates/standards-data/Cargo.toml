@@ -1,0 +1,13 @@
+[package]
+name = "conset-pdf-standards-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "conset_pdf_standards_data"
+path = "src/lib.rs"
+
+[dependencies]
