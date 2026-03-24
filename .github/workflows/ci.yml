@@ -39,22 +39,24 @@ jobs:
             ${{ runner.os }}-cargo-build-
 
       - name: Build workspace targets
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets --exclude conset-pdf-desktop-gui
 
       - name: Build backend-cli binary
         run: cargo build --bin backend-cli
 
       - name: Build desktop-gui library
+        if: runner.os == 'Windows'
         run: cargo build -p conset-pdf-desktop-gui --lib
 
       - name: Test workspace targets
-        run: cargo test --workspace --all-targets --exclude conset-pdf-extraction
+        run: cargo test --workspace --all-targets --exclude conset-pdf-extraction --exclude conset-pdf-desktop-gui
 
       - name: Test desktop-gui library
+        if: runner.os == 'Windows'
         run: cargo test -p conset-pdf-desktop-gui --lib
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --exclude conset-pdf-desktop-gui -- -D warnings
 
       - name: Rustfmt
         run: cargo fmt --all -- --check

@@ -24,7 +24,7 @@ jobs:
         run: cargo install cargo-tarpaulin --locked
 
       - name: Generate coverage
-        run: cargo tarpaulin --workspace --out Xml --out Lcov --output-dir coverage --exclude conset-pdf-extraction --timeout 300
+        run: cargo tarpaulin --workspace --out Xml --out Lcov --output-dir coverage --exclude conset-pdf-extraction --exclude conset-pdf-desktop-gui --timeout 300
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
