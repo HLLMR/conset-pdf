@@ -1,4 +1,4 @@
-# Conset PDF: Master Plan V4.2
+# Conset PDF: Master Plan
 **Version:** 4.2.1 (Architecture Execution Update - Monorepo + Tauri GUI Direction)  
 **Date:** March 19, 2026  
 **Owner:** HLLMR LLC  
@@ -42,7 +42,7 @@ This master plan is the top-level documentation authority for Conset PDF.
 
 Authority order:
 
-1. Master plan (`MASTER_PLAN_v4.md`)
+1. Master plan (`MASTER_PLAN.md`)
 2. Canonical derived docs (architecture, standards, workflow, active implementation plan)
 3. Code and tests as implementation evidence
 4. Historical records as informative only
@@ -260,15 +260,15 @@ Conset PDF operates like a compiler:
 | **PDF Generation** | Headless Chrome (via `headless_chrome`) | High-fidelity HTML→PDF, CSS support |
 | **Pattern Matching** | `regex` crate | Deterministic, fast, well-tested |
 | **Serialization** | `serde` + `serde_json` | Standard Rust serialization |
-| **GUI (V4 desktop)** | Tauri | Rust-native desktop shell with strong backend integration |
+| **GUI (desktop)** | Tauri | Rust-native desktop shell with strong backend integration |
 | **Testing** | Built-in `cargo test` + golden files | Regression testing |
 
 ### Repository Strategy (Monorepo with Hard Boundaries)
 
-Use a **single monorepo** for V4 development with strict package/crate boundaries.
+Use a **single monorepo** with strict package/crate boundaries.
 
 **Rationale:**
-- Backend and GUI contracts will evolve rapidly during V4
+- Backend and GUI contracts evolve rapidly during active implementation
 - Atomic cross-boundary refactors are required for reliability
 - One CI surface avoids integration drift between repos
 
@@ -280,13 +280,19 @@ repo-root/
 │   ├── backend-cli/         # Rust binary entrypoints (CLI/API host)
 │   └── desktop-gui/         # Tauri app + frontend UI
 ├── crates/
-│   ├── core-engine/         # Deterministic extraction and transforms
+│   ├── engine/              # Deterministic pipeline wrappers and stage orchestration
+│   ├── ir/                  # Transcript/IR types and validation
+│   ├── pdf-extraction/      # PDF loading and extraction backends
+│   ├── audit/               # Audit models and persistence
 │   ├── workflows/           # Merge/split/bookmarks/spec patch orchestration
 │   ├── contracts/           # Shared request/response/event schemas
 │   └── standards-data/      # Embedded standards datasets
 ├── docs/
-│   ├── prototype-postmortem/
-│   └── v4/
+│   ├── MASTER_PLAN.md
+│   ├── ARCHITECTURE.md
+│   ├── DEV_STANDARDS.md
+│   ├── AEC_STANDARDS.md
+│   └── TRANSCRIPT_ARCHITECTURE.md
 └── tests/
   ├── corpus/
   └── integration/
@@ -294,7 +300,7 @@ repo-root/
 
 **Boundary rules:**
 - GUI must depend on backend only through `crates/contracts`
-- No GUI imports from `core-engine` internals
+- No GUI imports from `crates/engine` internals
 - CLI/API and GUI integration tests required for every contract version bump
 - Repo split is optional later, only after contract churn stabilizes
 
@@ -1266,7 +1272,7 @@ cargo run -- apply-addendum \
 **Goal:** Ship monetizable product.
 
 **Deliverables:**
-- ☐ Desktop GUI on Tauri (V4 standard)
+- ☐ Desktop GUI on Tauri (canonical standard)
 - ☐ New workflow-first UI architecture (fresh implementation, not incremental patching of prototype wizard stack)
 - ☐ One-button workflows
 - ☐ Overlay visualization
@@ -1275,7 +1281,7 @@ cargo run -- apply-addendum \
 - ☐ Billing + licensing
 
 **GUI migration guardrails:**
-- Freeze prototype GUI to bugfix-only while V4 GUI is built
+- Freeze prototype GUI to bugfix-only while canonical GUI is built
 - Use contract-first integration (`crates/contracts`) between Tauri UI and Rust backend
 - Migrate workflows lane-by-lane with explicit parity checks
 - Remove legacy screens once parity + soak testing pass
@@ -1432,7 +1438,7 @@ Agent generates test:
 ```rust
 #[test]
 fn test_extract_text_page_1() {
-    let pdf = load_pdf("tests/fixtures/test.pdf");
+    let pdf = load_pdf("tests/corpus/tier1/simple.pdf");
     let page1 = extract_page(&pdf, 0);
     assert!(page1.text.contains("RWB Project"));
     assert!(page1.spans.len() > 10);
@@ -1736,7 +1742,7 @@ Before merging any code:
 
 ## Next Steps
 
-1. **Approve Master Plan V4.2** (this document)
+1. **Approve Master Plan** (this document)
 2. **Review Phase Definitions** (timeline, deliverables, dependencies)
 3. **Confirm Technology Stack** (Rust, PDFium, headless Chrome)
 4. **Build Supporting Documentation:**
@@ -1788,8 +1794,8 @@ This document is **constitutional**. Changes require explicit approval.
 | 4.0.0 | 2026-01-21 | Initial Master Plan |
 | 4.1.0 | 2026-01-22 | Production-ready architecture. Removed Python. Clarified PDFium. Simplified profile system. Defined phase definitions. Locked tech stack. |
 | **4.2.0** | **2026-01-23** | **Senior Architect Review - Phase Reorganization.** Key changes: (1) **Moved Pattern Dev Tool from Phase 12 to Phase 0.5** - recognized as critical development infrastructure, not polish. (2) **Added Chrome Metadata Preservation** - explicit extraction, storage, and reuse of headers/footers/branding for professional output. (3) **Added Development Workflow section** - micro-tasking strategy for AI coding agents, test-driven development, rubber duck reviews, debug logging standards. (4) **Added Non-Negotiable #6** - chrome metadata must be preserved. (5) **Added Non-Negotiable #20** - Pattern Dev Tool is infrastructure. (6) **Clarified Desktop-First GUI strategy** - defer web to Phase 11+ unless customer demand. (7) **Updated Glossary** - added Pattern Dev Tool, Chrome Metadata, Micro-Task. (8) **Updated Code Review Checklist** - added debug logging and micro-task commit requirements. |
-| **4.2.1** | **2026-03-19** | **Architecture Execution Update - Monorepo + Tauri GUI Direction.** Key changes: (1) Added monorepo repository strategy with hard package boundaries. (2) Standardized V4 desktop direction on Tauri. (3) Added contract-first backend/frontend integration guardrails. (4) Restored documentation authority block and imported workflow-gap constraints from the prior v4.2 constitutional plan during merge into `MASTER_PLAN_v4.md`. |
+| **4.2.1** | **2026-03-19** | **Architecture Execution Update - Monorepo + Tauri GUI Direction.** Key changes: (1) Added monorepo repository strategy with hard package boundaries. (2) Standardized desktop direction on Tauri. (3) Added contract-first backend/frontend integration guardrails. (4) Restored documentation authority block and imported workflow-gap constraints from the prior constitutional plan during merge into `MASTER_PLAN.md`. |
 
 ---
 
-**End of Master Plan V4.2**
+**End of Master Plan**

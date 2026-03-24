@@ -1,7 +1,8 @@
-# Conset PDF: AEC Standards V4.2.1
+# Conset PDF: AEC Standards
 
 **Version:** 4.2.1  
 **Date:** January 23, 2026  
+**Updated:** March 23, 2026 (harmonized with recovered prototype standards datasets)  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE
 **Doc Status Tag:** Implemented
@@ -12,7 +13,7 @@
 
 This document is the **authoritative reference for AEC domain knowledge** in Conset PDF. It defines the structure, conventions, and standards used in Architecture, Engineering, and Construction documents.
 
-This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNANCE.md`.
+This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.md`.
 
 **Audience:** Developers (human and AI agents) who need to understand AEC document structure
 
@@ -118,8 +119,18 @@ This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNAN
 | **31** | Earthwork | Excavation, fill, grading |
 | **32** | Exterior Improvements | Paving, landscaping, site utilities |
 | **33** | Utilities | Water supply, sanitary sewer, storm drainage |
+| **34** | Transportation | Roads, rails, airfield systems |
+| **35** | Waterway and Marine Construction | Marine, coastal, dredging |
+| **40** | Process Integration | Process systems integration |
+| **41** | Material Processing and Handling Equipment | Conveyors, cranes, process equipment |
+| **42** | Process Heating, Cooling, and Drying Equipment | Kilns, dryers, furnaces |
+| **43** | Process Gas and Liquid Handling, Purification, Storage | Process piping, tanks, treatment |
+| **44** | Pollution and Waste Control Equipment | Pollution control, waste systems |
+| **45** | Industry-Specific Manufacturing Equipment | Specialized industrial equipment |
+| **46** | Water and Wastewater Equipment | Treatment and plant equipment |
+| **48** | Electrical Power Generation | On-site generation |
 
-**Note:** Divisions 15-20, 24, 29-30, 34-49 are reserved or less commonly used.
+**Note:** Divisions 15–19, 24, 29–30, 36–39, and 47 are unassigned/reserved in MasterFormat 2018. Division 20 (Mechanical Support) is a common-work-results coordination division rarely specified directly.
 
 ---
 
@@ -215,10 +226,13 @@ Examples:
 - Engine normalizes to 2-digit format: `01 00 00`
 
 **Section ranges:**
-- Divisions 00-01: Administrative
-- Divisions 02-19: Construction/building envelope
-- Divisions 21-29: Mechanical/electrical/plumbing (MEP)
-- Divisions 31-33: Site work
+- Divisions 00–01: Administrative / Procurement
+- Divisions 02–19: Construction / Building envelope
+- Divisions 21–29: Mechanical, Electrical, and Plumbing (MEP)
+- Divisions 31–35: Site work and civil infrastructure
+- Divisions 40–49: Process and industrial (process/wastewater projects)
+
+> See [MASTERFORMAT_REFERENCE.md](./MASTERFORMAT_REFERENCE.md) for the complete division table with 4-character division codes, sort orders, and the pre-2004 legacy section migration algorithm.
 
 ---
 
@@ -228,47 +242,60 @@ Examples:
 
 **Single-letter discipline designators:**
 
-| Code | Discipline | Full Name | Typical Content | Sort Order |
-|------|-----------|-----------|-----------------|------------|
-| **G** | General | General | Cover sheets, key plans, legends | 10 |
-| **H** | Hazmat | Hazardous Materials | Asbestos, lead abatement | 20 |
-| **C** | Civil | Civil Engineering | Site plans, grading, utilities | 30 |
-| **L** | Landscape | Landscape Architecture | Planting plans, irrigation | 40 |
-| **A** | Architectural | Architecture | Floor plans, elevations, details | 50 |
-| **I** | Interiors | Interior Design | Finish plans, furniture layouts | 60 |
-| **S** | Structural | Structural Engineering | Foundation, framing, structural details | 65 |
-| **M** | Mechanical | Mechanical | HVAC plans, ductwork, piping | 70 |
-| **P** | Plumbing | Plumbing | Domestic water, sanitary, storm drainage | 80 |
-| **E** | Electrical | Electrical | Power, lighting, panel schedules | 90 |
-| **FA** | Fire Alarm | Fire Alarm | Fire detection, notification, often integrated with electrical | 92 |
-| **FP** | Fire Protection | Fire Protection | Fire sprinklers, standpipes, suppression systems | 95 |
-| **T** | Telecom | Telecommunications | Voice/data, CCTV, security | 100 |
-| **V** | Vertical Transportation | Elevators/Escalators | Elevator plans, equipment details | 105 |
+| Code | Discipline | Canonical4 | Full Name | Typical Content | Sort Order |
+|------|-----------|-----------|-----------|-----------------|------------|
+| **G** | General | `GENR` | General | Cover sheets, key plans, legends | 10 |
+| **V** | Survey / Mapping | `SURV` | Survey / Mapping | Survey plans, topographic maps, utility surveys | 20 |
+| **H** | Hazardous Materials | `HAZD` | Hazardous Materials | Asbestos, lead abatement drawings | 22 |
+| **B** | Geotechnical | `GEOT` | Geotechnical | Boring logs, foundation investigation | 24 |
+| **C** | Civil | `CIVL` | Civil Engineering | Site plans, grading, utilities (see disambiguation) | 30 |
+| **L** | Landscape | `LAND` | Landscape Architecture | Planting plans, irrigation | 40 |
+| **A** | Architectural | `ARCH` | Architecture | Floor plans, elevations, details | 50 |
+| **I** | Interiors | `INTR` | Interior Design | Finish plans, furniture layouts | 55 |
+| **S** | Structural | `STRU` | Structural Engineering | Foundation, framing, structural details | 60 |
+| **M** | Mechanical | `MECH` | Mechanical | HVAC plans, ductwork, piping | 70 |
+| **F** | Fire Protection | `FIRP` | Fire Protection | Fire sprinklers, standpipes, suppression systems | 75 |
+| **P** | Plumbing | `PLUM` | Plumbing | Domestic water, sanitary, storm drainage | 80 |
+| **E** | Electrical | `ELEC` | Electrical | Power, lighting, panel schedules | 90 |
+| **T** | Telecommunications | `TECH` | Telecommunications | Voice/data, CCTV, security, AV, IT | 110 |
+| **W** | Distributed Energy | `DIST` | Distributed Energy | PV solar, battery storage, cogen, geothermal | 115 |
+| **D** | Process ¹ | `PROC` | Process Engineering | Process piping, P&IDs, industrial equipment | 125 |
+| **Q** | Equipment | `EQPT` | Equipment Layouts | Built-in and process equipment | 130 |
+| **R** | Resource (Existing) | `RSRC` | Existing Conditions | Existing building / civil documentation | 135 |
+| **X** | Other | `OTHR` | Other Disciplines | Commissioning, sustainability, alternates | 140 |
+| **Z** | Contractor / Shop | `SHOP` | Shop Drawings | Contractor fabrication / shop drawings | 145 |
+| **O** | Operations | `OPER` | Operations | Facility O&M, operations technology | 150 |
 
-**Note:** Civil (C) and Controls (C) share the same letter—see disambiguation below.
+**Notes:**  
+¹ `D` is the UDS discipline for *Process/Industrial* drawings. On non-industrial building projects, some firms use `D` for Demolition sheets — use Canonical4 `DEMO` (sort 25) in that case.  
+`FA` (Fire Alarm, `FIRA`, sort 95) is a two-character sub-code of `F`, not a top-level UDS letter — see the alias table below.  
+Canonical4 codes `STRU`, `FIRP`, and `TECH` are the app-level codes; the UDS EID source table uses `STRC`, `FIRE`, and `TELE` for the bare-letter parent entries.  
+See [UDS_DISCIPLINES.md](./UDS_DISCIPLINES.md) for the full ~100 sub-discipline table with 4-char `disciplineCODE` values.
+
+**Note:** Civil (`C`) and Controls share the same letter—see disambiguation below.
 
 ---
 
 ### Common Multi-Letter Aliases
 
-**Industry-standard aliases for disciplines:**
+**Multi-letter sheet number prefix aliases:**
 
-| Alias | Maps To | Discipline | Confidence |
-|-------|---------|------------|------------|
-| **FA** | FA | Fire Alarm | 0.95 |
-| **FP** | FP | Fire Protection | 0.95 |
-| **SPRK** | FP | Sprinkler | 0.95 |
-| **DDC** | Controls | Direct Digital Controls | 0.95 |
-| **BAS** | Controls | Building Automation System | 0.95 |
-| **ATC** | Controls | Automatic Temperature Control | 0.95 |
-| **CTRL** | Controls | Controls | 0.95 |
-| **SPRK** | F | Sprinkler | 0.95 |
-| **SITE** | C | Civil (Site) | 0.95 |
-| **HVAC** | M | Mechanical (HVAC) | 0.95 |
-| **MECH** | M | Mechanical | 0.95 |
-| **ELEC** | E | Electrical | 0.95 |
-| **ARCH** | A | Architectural | 0.95 |
-| **STRU** | S | Structural | 0.95 |
+| Alias | Canonical4 | Discipline | UDS Basis | Confidence |
+|-------|-----------|------------|-----------|------------|
+| **FA** | `FIRA` | Fire Alarm | Sub-code of `F` (EID = `FA`) | 0.95 |
+| **FP** | `FIRP` | Fire Protection | Alias for `F` | 0.95 |
+| **SPRK** | `FIRP` | Fire Sprinkler | Alias for `F` | 0.90 |
+| **DDC** | `CTRL` | Direct Digital Controls | No UDS letter; app extension | 0.95 |
+| **BAS** | `CTRL` | Building Automation System | No UDS letter; app extension | 0.95 |
+| **ATC** | `CTRL` | Automatic Temperature Control | No UDS letter; app extension | 0.95 |
+| **SEC** | `TECH` | Security | Alias for `T` | 0.90 |
+| **AV** | `TECH` | Audio / Video | Alias for `T` | 0.90 |
+| **IT** | `TECH` | Information Technology | Alias for `T` | 0.90 |
+| **SV** | `SURV` | Survey | Alias for `V` | 0.85 |
+| **DM** | `DEMO` | Demolition | App shorthand | 0.85 |
+| **EX** | `UNKN` | Existing (ambiguous) | Needs title context | 0.80 |
+
+See [DRAWINGS_CLASSIFICATION.md](./DRAWINGS_CLASSIFICATION.md) for the complete classification algorithm including fallback logic and Rust type recommendations.
 
 ---
 
@@ -278,17 +305,17 @@ Examples:
 
 **Heuristic keywords:**
 
-**Civil indicators:**
-- "Civil", "Site", "Earthwork", "Grading", "Paving", "Utility", "Storm", "Sanitary"
+**Civil indicators** (any match → `CIVL`, confidence 0.85, basis: HEURISTIC):
+- "Civil", "Site", "Earthwork", "Grading", "Drainage", "Paving", "Utility", "Storm", "Sanitary", "Road", "Erosion", "Survey"
 
-**Controls indicators:**
-- "Controls", "DDC", "BAS", "ATC", "Automation", "BMS", "HVAC Controls", "Sequence"
+**Controls indicators** (any match → `CTRL`, confidence 0.85, basis: HEURISTIC):
+- "Control", "Controls", "DDC", "BAS", "ATC", "Automation", "BMS", "Sequence", "Point", "Diagram", "Temperature Control", "HVAC Controls"
 
 **Algorithm:**
 1. Extract sheet ID prefix (e.g., "C1-01" → "C")
-2. If title contains "Controls", "DDC", "BAS", "Automation" → Controls (confidence 0.85)
-3. If title contains "Civil", "Site", "Earthwork", "Grading" → Civil (confidence 0.85)
-4. If no title or ambiguous → Civil (default, lower sort order, confidence 0.72)
+2. If title contains any Controls indicator → `CTRL` (confidence 0.85)
+3. If title contains any Civil indicator → `CIVL` (confidence 0.85)
+4. If no title or ambiguous → `CIVL` (default; confidence 0.72, basis: HEURISTIC)
 
 **Examples:**
 ```
@@ -423,6 +450,15 @@ UV-2| Trane ECVF | 1500 | 60,000   | 4.0       | 208/3   | CO2 sensor
 - Header detection (first row vs repeated headers)
 - Merged cells (schedule titles span columns)
 - Rotated text (column headers vertical)
+
+---
+
+### Reference Annexes
+
+The following documents are detailed annexes to the drawings standards defined above:
+
+- **[UDS_DISCIPLINES.md](./UDS_DISCIPLINES.md):** Complete UDS discipline table (~100 sub-discipline entries across 21 discipline groups), with 4-char `disciplineCODE` values, sort orders, and descriptions. Source: recovered prototype extract from `UDS.xlsx`.
+- **[DRAWINGS_CLASSIFICATION.md](./DRAWINGS_CLASSIFICATION.md):** Full classification algorithm with all alias entries (with confidence scores), disambiguation pseudocode, and recommended Rust types for `crates/standards-data`.
 
 ---
 
@@ -840,25 +876,36 @@ Parse:  Division=23 (HVAC), Submittal=1, Description=Unit Ventilators
 ### Drawings Discipline Sort Order
 
 ```
-10  - General (G)
-20  - Hazmat (H)
-30  - Civil (C)
-40  - Landscape (L)
-50  - Architectural (A)
-60  - Interiors (I)
-65  - Structural (S)
-70  - Mechanical (M)
-80  - Plumbing (P)
-90  - Electrical (E)
-92  - Fire Alarm (FA)
-95  - Fire Protection (FP)
-100 - Telecom (T)
-105 - Vertical Transportation (V)
-110 - Controls (CTRL, DDC, BAS, ATC)
-999 - Unknown (?)
+10  - GENR (G)    — General
+20  - SURV (V)    — Survey / Mapping
+22  - HAZD (H)    — Hazardous Materials
+24  - GEOT (B)    — Geotechnical
+25  - DEMO        — Demolition (D prefix on non-industrial projects)
+30  - CIVL (C)    — Civil Engineering
+40  - LAND (L)    — Landscape
+50  - ARCH (A)    — Architectural
+55  - INTR (I)    — Interiors
+60  - STRU (S)    — Structural
+70  - MECH (M)    — Mechanical
+75  - FIRP (F)    — Fire Protection (sprinkler/suppression; plumbing-adjacent)
+80  - PLUM (P)    — Plumbing
+90  - ELEC (E)    — Electrical
+95  - FIRA (FA)   — Fire Alarm (electrical-adjacent)
+100 - FIRE        — Fire legacy fallback (back-compat only; prefer FIRP)
+110 - TECH (T)    — Telecommunications / Technology
+115 - DIST (W)    — Distributed Energy
+120 - CTRL        — Controls / DDC / BAS / ATC (no UDS letter)
+130 - VEND        — Vendor / Deferred Submittals
+140 - SPEC        — Specification-only sheets
+145 - SHOP (Z)    — Contractor / Shop Drawings
+999 - UNKN        — Unknown / Unclassified
 ```
 
-**Note:** Fire Alarm (FA) typically designed by electrical engineers, hence close to Electrical. Fire Protection (FP) is separate mechanical/plumbing discipline for sprinklers and suppression systems.
+**Notes:**
+- Fire Protection (`FIRP`, F) sorts at 75 — hydraulically part of the plumbing/mechanical trade, before Plumbing at 80.
+- Fire Alarm (`FIRA`, FA) sorts at 95 — typically designed by the electrical engineer, adjacent to Electrical.
+- `CTRL` (Controls/DDC) has no UDS letter. Drawings are labeled DDC, BAS, ATC, or C (ambiguous with Civil — see disambiguation).
+- `FIRE` (100) is a legacy fallback for old data; new classifications should use `FIRP` or `FIRA`.
 
 ---
 
@@ -887,7 +934,7 @@ Division 33 - Utilities
 | Version | Date | Changes |
 |---------|------|---------|
 | 4.0.0 | 2026-01-21 | Initial AEC standards (UDS, MasterFormat) |
-| 4.2.0 | 2026-01-23 | **Aligned with Master Plan V4.2.** Added: (1) Spec outline structure (3-part format, article hierarchy), (2) Footer format patterns with examples, (3) Title block structure reference, (4) Sheet numbering conventions, (5) Equipment tag patterns, (6) Common AEC terminology and abbreviations, (7) Equipment schedule characteristics, (8) Submittal structure and data fields, (9) Quick reference section for parsing patterns. Simplified: Removed governance (moved to separate doc), removed code examples (that's DEV_STANDARDS), focused on domain reference only. |
+| 4.2.0 | 2026-01-23 | **Aligned with MASTER_PLAN.** Added: (1) Spec outline structure (3-part format, article hierarchy), (2) Footer format patterns with examples, (3) Title block structure reference, (4) Sheet numbering conventions, (5) Equipment tag patterns, (6) Common AEC terminology and abbreviations, (7) Equipment schedule characteristics, (8) Submittal structure and data fields, (9) Quick reference section for parsing patterns. Simplified: Removed governance (moved to separate doc), removed code examples (that's DEV_STANDARDS), focused on domain reference only. |
 | 4.2.1 | 2026-01-23 | **Discipline sort order fix and abbreviations expansion.** Changed: (1) Separated Fire Alarm (FA, order 92) from Fire Protection (FP, order 95) - FA typically electrical engineering, FP mechanical/plumbing, (2) Added comprehensive abbreviations from industry practice (service types, equipment, BAS devices, wire colors, valve positions, personnel, protocols). |
 
 ---

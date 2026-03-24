@@ -4,7 +4,7 @@
 
 This document describes how to contribute to Conset PDF. It's the practical guide to turning ideas into production code. Follow these standards not because they're rules, but because they preserve correctness and auditability in a mission-critical system.
 
-**Reference:** [DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md) is the authoritative source for all standards. This document summarizes key requirements and adds contribution-specific guidance.
+**Reference:** [DEV_STANDARDS.md](docs/DEV_STANDARDS.md) is the authoritative source for all standards. This document summarizes key requirements and adds contribution-specific guidance.
 
 ---
 
@@ -572,7 +572,7 @@ Use this template when opening a PR:
 
 ## Checklist
 
-- [ ] Follows [DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md)
+- [ ] Follows [DEV_STANDARDS.md](docs/DEV_STANDARDS.md)
 - [ ] Code formatted (`cargo fmt`)
 - [ ] Clippy clean (`cargo clippy`)
 - [ ] Line coverage ≥85%
@@ -958,8 +958,8 @@ git diff origin/main
 ## Help & Questions
 
 - **Documentation:** See [docs/](docs/) directory
-- **Standards:** [DEV_STANDARDS_v4_2.md](docs/DEV_STANDARDS_v4_2.md)
-- **Architecture:** [ARCHITECTURE_v4_2.md](docs/ARCHITECTURE_v4_2.md)
+- **Standards:** [DEV_STANDARDS.md](docs/DEV_STANDARDS.md)
+- **Architecture:** [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Issues:** [GitHub Issues](https://github.com/your-org/conset-pdf/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/your-org/conset-pdf/discussions)
 

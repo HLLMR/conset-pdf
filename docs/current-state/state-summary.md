@@ -17,7 +17,7 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
   - authority order defined,
   - mandatory status tags enforced,
   - non-authoritative claim rule established.
-- Canonical v4 entry points are explicitly listed in the documentation index.
+- Canonical entry points are explicitly listed in the documentation index.
 
 ## Complete Now
 
@@ -26,8 +26,8 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Foundational test suites exist across core crates.
 - Phase A governance policy is active and tagged across docs.
 - Phase B: current-state library hardened with evidence-linked assertions.
-- Phase C: full repo doc triage complete — 8 deprecated v3 docs retired, triage matrix v1.3.0 at 113/113 coverage, merge-target count = 0.
-- Phase D: selective postmortem migration complete — M-001 through M-015 logged (including d-ext cycle), SLM-001 through SLM-010 all closed. See `../PHASE_D_MIGRATION_REPORT.md`.
+- Phase C: full repo doc triage complete — deprecated v3 merge-target docs retired; merge-target count = 0 (see `../DOC_GOVERNANCE.md` canonical phase closure snapshot).
+- Phase D: selective postmortem migration complete — M-001 through M-015 (including d-ext cycle), SLM-001 through SLM-010 all closed; migrated constraints are reflected in canonical docs (see `../DOC_GOVERNANCE.md` and `../ARCHITECTURE.md`).
 - Phase E: Gap Register complete — 10 gaps enumerated (G-001–G-010), 4 CRITICAL gaps identified on the PDF→IR critical path. See `gap-register.md`.
 - Phase F: Alignment Audit complete — capability-matrix updated to reflect actual code state; critical stubs and missing wiring documented with canonical source mismatches; R-005 raised.
 
@@ -42,13 +42,13 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 ## Evidence-Linked Assertions
 
 - Governance model implemented: see `../DOC_GOVERNANCE.md` and `../DOCUMENTATION_INDEX.md`.
-- Phase 0 accepted baseline: see `../dev/PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md` and `../MASTER_PLAN_v4.md`.
+- Phase 0 accepted baseline: see `../dev/PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md` and `../MASTER_PLAN.md`.
 - Crate foundation present: see `../../crates/ir/`, `../../crates/engine/`, `../../crates/pdf-extraction/`, `../../crates/audit/`.
 
 ## Evidence Pointers
 
-- Master plan: ../MASTER_PLAN_v4.md
-- Architecture: ../ARCHITECTURE_v4_2.md
-- Standards: ../DEV_STANDARDS_v4_2.md
+- Master plan: ../MASTER_PLAN.md
+- Architecture: ../ARCHITECTURE.md
+- Standards: ../DEV_STANDARDS.md
 - Governance: ../DOC_GOVERNANCE.md
 - Phase 0 plan: ../dev/PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md

@@ -1,4 +1,4 @@
-# Conset PDF: Development Standards V4.2
+# Conset PDF: Development Standards
 
 **Version:** 4.2.0  
 **Date:** January 23, 2026  
@@ -12,7 +12,7 @@
 
 This document defines the **day-to-day coding standards** for Conset PDF development. It's the practical companion to the Master Plan—focused on **how we write code**, **how we test**, and **how we work with AI coding agents**.
 
-This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNANCE.md`.
+This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.md`.
 
 **Audience:** Developers (human and AI agents)
 
@@ -528,7 +528,7 @@ tests/
 │   ├── phase2_furniture_detection.rs
 │   ├── phase3_paragraph_parsing.rs
 │   └── ...
-├── fixtures/
+├── corpus/
 │   ├── test_spec.pdf
 │   ├── test_drawing.pdf
 │   └── expected_transcript.json
@@ -546,7 +546,7 @@ use std::path::Path;
 #[test]
 fn test_extract_layout_from_sample_spec() {
     let engine = Engine::new();
-    let pdf_path = Path::new("tests/fixtures/test_spec.pdf");
+    let pdf_path = Path::new("tests/corpus/tier1/simple.pdf");
     
     let transcript = engine.extract_layout(pdf_path)
         .expect("layout extraction should succeed");
@@ -1185,7 +1185,7 @@ Agent generates test:
 ```rust
 #[test]
 fn test_extract_text_page_1() {
-    let pdf = load_pdf("tests/fixtures/test.pdf");
+    let pdf = load_pdf("tests/corpus/tier1/simple.pdf");
     let page1 = extract_page(&pdf, 0);
     assert!(page1.text.contains("RWB Project"));
     assert!(page1.spans.len() > 10);
@@ -1424,7 +1424,7 @@ pub fn extract_all_pages(pdf: &Document) -> impl Iterator<Item = Page> + '_ {
 
 ### Determinism Guarantees
 
-These constraints are imported from postmortem lessons and are now normative for v4 implementation.
+These constraints are imported from postmortem lessons and are now normative for current implementation.
 
 1. `LayoutTranscript` ordering must be deterministic with explicit tie-breaks (recommended canonical order: `y`, then `x`, then stable content hash).
 2. Rotation normalization must be applied before caching and hashing so coordinate spaces are comparable across input variants.
@@ -1490,7 +1490,7 @@ Bookmark destination mapping is regression-sensitive and must maintain dedicated
 | Version | Date | Changes |
 |---------|------|---------|
 | 4.0.0 | 2026-01-21 | Initial release (high-level principles) |
-| 4.2.0 | 2026-01-23 | **Major revision aligned with Master Plan V4.2.** Added: (1) Tactical debug logging standards with examples, (2) Micro-task development workflow for AI agents, (3) Test-driven development workflow, (4) Rubber duck review process, (5) Explicit code examples (good vs bad), (6) Expanded error handling section, (7) Structured logging guidance, (8) Performance guidelines, (9) Memory usage guidelines. Reorganized: moved governance to separate document, focused on day-to-day coding practices. |
+| 4.2.0 | 2026-01-23 | **Major revision aligned with MASTER_PLAN.** Added: (1) Tactical debug logging standards with examples, (2) Micro-task development workflow for AI agents, (3) Test-driven development workflow, (4) Rubber duck review process, (5) Explicit code examples (good vs bad), (6) Expanded error handling section, (7) Structured logging guidance, (8) Performance guidelines, (9) Memory usage guidelines. Reorganized: moved governance to separate document, focused on day-to-day coding practices. |
 
 ---
 

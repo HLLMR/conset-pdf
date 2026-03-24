@@ -86,7 +86,7 @@ cargo build
 cargo test
 
 # Test PDF classification tool
-cargo run --bin classify-pdf tests/fixtures/tier1/simple.pdf
+cargo run --bin classify-pdf tests/corpus/tier1/simple.pdf
 
 # Should output tier classification, not "Pdfium library not found"
 ```

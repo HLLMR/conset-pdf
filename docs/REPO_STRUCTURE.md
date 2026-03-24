@@ -75,7 +75,7 @@ Rules:
 - `conset-pdf-contracts` -> (none)
 - `conset-pdf-workflows` -> `conset-pdf-contracts`
 - `conset-pdf-ir` -> (none)
-- `conset-pdf-pdf-extraction` -> `conset-pdf-ir`, `conset-pdf-contracts`
+- `conset-pdf-extraction` -> `conset-pdf-ir`, `conset-pdf-contracts`
 - `conset-pdf-audit` -> `conset-pdf-contracts`
 - `conset-pdf-engine` -> `conset-pdf-ir` (dev: `conset-pdf-extraction`)
 - `conset-pdf-backend-cli` -> `conset-pdf-engine`, `conset-pdf-contracts`, `conset-pdf-audit`

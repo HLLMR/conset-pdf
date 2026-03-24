@@ -1,11 +1,11 @@
-# Conset PDF: Architecture V4.2
+# Conset PDF: Architecture
 
 **Version:** 4.2.0  
 **Date:** January 23, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
-**Alignment:** Master Plan V4.2 + DEV_STANDARDS V4.2 + AEC_STANDARDS V4.2.1
+**Alignment:** MASTER_PLAN + DEV_STANDARDS + AEC_STANDARDS
 
 ---
 
@@ -13,7 +13,7 @@
 
 This document describes the **system architecture** of Conset PDF, a deterministic-first, compiler-model system for extracting, parsing, and reconstructing structured content from AEC PDFs.
 
-This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNANCE.md`.
+This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.md`.
 
 **Scope:**
 - Architectural principles (SSOT, determinism, medium-specificity)
@@ -147,35 +147,39 @@ This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNAN
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Engine (CLI/API)                     │
+│                        apps/backend-cli                      │
 │  - Command routing                                          │
-│  - Workflow orchestration                                    │
-│  - Error handling                                           │
+│  - contracts <-> engine translation boundary                │
+│  - Audit session lifecycle                                  │
 └─────────────────────────────────────────────────────────────┘
-                           │
-                           ↓
+                  │
+                  ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Shared Foundation                         │
+│                      crates/engine                          │
+│  - Pipeline stage orchestration (extraction/furniture/...)  │
+│  - Extractor / Processor public API                         │
+└─────────────────────────────────────────────────────────────┘
+                  │
+                  ↓
+┌─────────────────────────────────────────────────────────────┐
+│                     Shared Foundation                        │
 │  ┌────────────────┬──────────────┬─────────────────────┐   │
-│  │ LayoutIR       │ Audit        │ Pattern Database    │   │
-│  │ (geometry)     │ (events)     │ (versioned rules)   │   │
+│  │ crates/ir      │ crates/audit │ crates/standards-   │   │
+│  │ (geometry)     │ (events)     │ data (datasets)     │   │
 │  └────────────────┴──────────────┴─────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ↓            ↓            ↓
-   ┌────────────────┐ ┌────────────┐ ┌────────────────┐
-   │ Spec           │ │ Drawing    │ │ Submittal      │
-   │ Processor      │ │ Processor  │ │ Processor      │
-   │                │ │            │ │                │
-   │ - Footer-first │ │ - UDS      │ │ - Tag          │
-   │   oracle       │ │   classify │ │   extraction   │
-   │ - Outline      │ │ - Sheet    │ │ - Equipment    │
-   │   parsing      │ │   inventory│ │   grouping     │
-   │ - Section      │ │ - Schedule │ │ - Data         │
-   │   regeneration │ │   extract  │ │   extraction   │
-   └────────────────┘ └────────────┘ └────────────────┘
 ```
+
+### Current Implementation Snapshot (March 2026)
+
+- `apps/backend-cli` is implemented as the primary executable surface and writes typed audit bundles.
+- `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
+- `crates/engine` exposes pipeline stages, but stages remain mostly pass-through/scaffold logic.
+- `crates/pdf-extraction` has working document/page loading and text extraction primitives, but page-structured extraction remains incomplete.
+- `crates/ir` types and tests are present; full validator enforcement remains incomplete.
+- `crates/audit` models and persistence are implemented; pipeline hook integration remains open.
+
+Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 
 ---
 
@@ -183,95 +187,82 @@ This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNAN
 
 ```
 conset-pdf/
-├── Cargo.workspace.toml
+├── Cargo.toml
+├── apps/
+│   ├── backend-cli/          # CLI/API host and contracts boundary
+│   └── desktop-gui/          # Desktop GUI backend stubs
 ├── crates/
-│   ├── engine/               # Main binary + API
+│   ├── engine/               # Pipeline orchestration and runtime API
 │   │   └── src/
-│   │       ├── main.rs       # CLI entry point
+│   │       ├── main.rs       # Engine binary stub
 │   │       ├── lib.rs        # Public API
-│   │       ├── cli/          # Command definitions
-│   │       └── workflows/    # Workflow orchestration
+│   │       ├── extractor.rs  # Extractor API
+│   │       ├── processor.rs  # Processor API
+│   │       └── pipeline/     # extraction/furniture/parsing/optimization
 │   │
 │   ├── ir/                   # Layout IR (shared)
 │   │   └── src/
-│   │       ├── transcript.rs # LayoutTranscript
-│   │       ├── geometry.rs   # BBox, coordinates
-│   │       └── validation.rs # Invariant checks
+│   │       ├── types.rs
+│   │       ├── transcript.rs
+│   │       ├── geometry.rs
+│   │       └── validation.rs
 │   │
 │   ├── audit/                # Audit framework (shared)
 │   │   └── src/
-│   │       ├── event.rs      # AuditEvent
-│   │       ├── trail.rs      # AuditTrail (JSONL)
-│   │       ├── bundle.rs     # AuditBundle
-│   │       └── overlay.rs    # Visual overlays
-│   │
-│   ├── patterns/             # Pattern database (shared)
-│   │   └── src/
-│   │       ├── database.rs   # PatternDB
-│   │       ├── matcher.rs    # Pattern matching
-│   │       └── validator.rs  # Pattern validation
+│   │       ├── events.rs
+│   │       ├── bundle.rs
+│   │       ├── writer.rs
+│   │       └── lib.rs
 │   │
 │   ├── pdf-extraction/       # PDF library wrapper (shared)
 │   │   └── src/
-│   │       ├── pdfium.rs     # PDFium integration
-│   │       ├── extract.rs    # Text extraction
-│   │       └── writeback.rs  # PDF manipulation
+│   │       ├── extractor.rs
+│   │       ├── traits.rs
+│   │       └── error.rs
 │   │
-│   ├── spec-processor/       # Spec-specific
-│   │   └── src/
-│   │       ├── processor.rs  # Main logic
-│   │       ├── furniture.rs  # Chrome detection
-│   │       ├── ast.rs        # SpecAST
-│   │       ├── outline.rs    # Outline parsing
-│   │       └── regenerate.rs # HTML → PDF
+│   ├── contracts/            # Shared request/response/event schemas
+│   ├── workflows/            # Workflow contracts/orchestration scaffolds
+│   └── standards-data/       # Standards datasets and lookup support
 │   │
-│   ├── drawing-processor/    # Drawing-specific
-│   │   └── src/
-│   │       ├── processor.rs  # Main logic
-│   │       ├── inventory.rs  # Sheet inventory
-│   │       ├── ast.rs        # DrawingAST
-│   │       └── schedules.rs  # Table extraction
-│   │
-│   ├── submittal-processor/  # Submittal-specific
-│   │   └── src/
-│   │       ├── processor.rs  # Main logic
-│   │       ├── extraction.rs # Data extraction
-│   │       └── ast.rs        # SubmittalAST
-│   │
-│   └── standards/            # AEC standards (shared)
-│       └── src/
-│           ├── uds.rs        # UDS discipline classification
-│           ├── masterformat.rs # CSI MasterFormat
-│           └── confidence.rs # Scoring utilities
-│
 ├── tools/
-│   └── pattern-dev/          # Pattern Development Tool (Phase 0.5)
-│       └── src/
-│           ├── main.rs       # CLI for pattern testing
-│           ├── tester.rs     # Pattern → PDF → overlay
-│           ├── validator.rs  # Pattern validation
-│           └── visualizer.rs # Overlay generation
+│   ├── Cargo.toml
+│   └── classify_pdf.rs       # Utility binary for PDF corpus classification
 │
 └── tests/
-    ├── integration/          # End-to-end tests
-    ├── torture-corpus/       # Nightmare PDFs
-    └── golden/               # Reference outputs
+  ├── integration/          # Cross-crate integration tests
+  └── corpus/               # Tiered PDF corpus fixtures
 ```
 
 ---
 
 ### Component Responsibilities
 
-#### engine (Main Binary)
+#### apps/backend-cli
 
-**Responsibility:** CLI interface, workflow orchestration, error handling.
+**Responsibility:** CLI interface, workflow request construction, engine dispatch, and audit bundle lifecycle.
+
+**Current state:** Implemented and functional for request/response and audit session wiring; operation handlers are still scaffold-level for several workflows.
+
+---
+
+#### apps/desktop-gui
+
+**Responsibility:** Desktop GUI backend command surface aligned to `contracts` types.
+
+**Current state:** Stub command handlers with stable signatures; frontend/runtime wiring is deferred.
+
+---
+
+#### engine
+
+**Responsibility:** Extraction/processing API and pipeline stage orchestration.
 
 **Key modules:**
-- `main.rs` — Entry point, argument parsing
-- `cli/` — Command definitions (extract, segment, regenerate, etc.)
-- `workflows/` — Workflow coordination (call processors in correct order)
+- `extractor.rs` — Extractor stage entrypoint (`extract`)
+- `processor.rs` — Processor stage entrypoint (`process`)
+- `pipeline/*` — extraction, furniture_detection, parsing, optimization stages
 
-**Dependencies:** All other crates (orchestrator role)
+**Current state:** Pipeline boundaries are present; stage internals are largely scaffold/pass-through pending gap closure.
 
 ---
 
@@ -305,100 +296,53 @@ conset-pdf/
 
 ---
 
-#### patterns (Pattern Database)
-
-**Responsibility:** Versioned pattern database for chrome detection and classification.
-
-**Key types:**
-- `PatternDB` — Immutable pattern collection (versioned)
-- `Pattern` — Regex + confidence threshold + examples
-- `PatternMatch` — Match result with confidence
-
-**Validation:** Every pattern includes test cases, validated in CI
-
----
-
 #### pdf-extraction
 
 **Responsibility:** PDF library wrapper (PDFium), deterministic extraction.
 
-**Key functions:**
-- `extract_transcript(pdf_path)` → `LayoutTranscript`
-- `extract_chrome_metadata(chrome_regions)` → `ChromeMetadata`
-- `replace_pages(original, replacement)` → merged PDF
-- `apply_chrome_template(pages, metadata)` → PDF with chrome
+**Key functions (current):**
+- `load_document(path)`
+- `get_page_count(document)`
+- `extract_text(document, page_index)`
+- `extract_page(...)` (currently scaffold-level)
 
 **Critical:** Crash containment, memory caps, safe failure modes.
 
 ---
 
-#### spec-processor
+#### contracts
 
-**Responsibility:** Spec-specific processing (outline parsing, section regeneration).
-
-**Key modules:**
-- `furniture.rs` — Footer detection, chrome extraction, metadata preservation
-- `ast.rs` — SpecAST (hierarchical outline structure)
-- `outline.rs` — Outline marker parsing (A., 1., 1.1, etc.)
-- `regenerate.rs` — AST → HTML/CSS → PDF (with chrome reapplication)
-
-**Standards:** Uses MasterFormat from `standards` crate
+**Responsibility:** Shared schema authority for workflow requests/responses and typed audit payloads.
 
 ---
 
-#### drawing-processor
+#### workflows
 
-**Responsibility:** Drawing-specific processing (sheet inventory, UDS classification).
-
-**Key modules:**
-- `inventory.rs` — Sheet detection, UDS classification, sorting
-- `ast.rs` — DrawingAST (spatial structure)
-- `schedules.rs` — Equipment schedule extraction (tables)
-
-**Standards:** Uses UDS from `standards` crate
+**Responsibility:** Workflow trait/context/result contracts and operation-routing surface.
 
 ---
 
-#### submittal-processor
-
-**Responsibility:** Submittal-specific processing (equipment data extraction).
-
-**Key modules:**
-- `extraction.rs` — Tag detection, unit boundary detection
-- `ast.rs` — SubmittalAST (equipment-centric structure)
-
-**Output:** Tidy data format (CSV/JSON)
-
----
-
-#### standards
+#### standards-data
 
 **Responsibility:** AEC-specific classification logic (UDS, MasterFormat).
 
-**Key modules:**
-- `uds.rs` — Drawings discipline classification
-- `masterformat.rs` — Specs section classification
-- `confidence.rs` — Scoring utilities, tie-breaking
+**Current state:** Dataset crate is present; incremental implementation remains in progress.
 
-**Source of Truth:** Implements AEC_STANDARDS V4.2.1
+**Source of Truth:** Implements AEC_STANDARDS
 
 ---
 
-#### pattern-dev (Tool, Phase 0.5)
+#### tools
 
-**Responsibility:** Pattern development and validation tool.
+**Responsibility:** Utility binaries for repo-level operations.
 
-**Key functions:**
-- Test pattern against sample PDFs
-- Generate visual overlays (show matched regions)
-- Validate pattern coverage
-- Export validated patterns to database
-
-**Why critical:** Without this tool, pattern development is blind.
+**Current state:** `classify_pdf.rs` utility is present.
 
 ---
 
 ## Compiler Pipeline (Stages)
+
+The stage contracts below define the target behavior. Current implementation status for each stage is tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 
 ### Stage 1: Layout Extraction (Lexer)
 
@@ -952,7 +896,7 @@ Re-run with correction applied
 
 ### Baseline Operation Surface (Imported)
 
-The following operation families are retained as durable external surface expectations for v4 evolution:
+The following operation families are retained as durable external surface expectations for ongoing evolution:
 
 1. `merge-addenda` style workflows: analyze sheet/section mapping, apply corrections, then execute deterministic replacement/insertion.
 2. `split-set` style workflows: partition by normalized keys (discipline/section/division) with deterministic grouping.
@@ -1055,6 +999,26 @@ Layout detection for drawings, specs, and submittals must follow a profile-first
 5. Heuristic fallback must be feature-flagged to signal architectural direction while preserving recovery capability.
 6. ROI results with low-confidence IDs must be accepted with warning rather than silently routing to fallback.
 
+### Phase D Monorepo Integration Outcomes (M-001 to M-003)
+
+These integration outcomes are canonical architectural constraints derived from Phase D and applied to the current monorepo boundary design.
+
+- M-001 Transcript-first contract stabilization:
+  - `crates/contracts` is the shared schema authority for workflow request/response and audit payload surface types.
+  - Engine internals remain `LayoutTranscript`-typed to avoid transport coupling.
+  - CLI/GUI transport translation occurs at application boundaries (for example `apps/backend-cli` handlers), not inside engine internals.
+  - Result: Stable CLI/GUI IPC contracts without forcing transport schema types into low-level engine stages.
+- M-002 Workflow ordering and gate semantics:
+  - `crates/workflows` defines workflow trait/context/result contracts and operation routing surface.
+  - Operation sequencing remains explicit and deterministic: `analyze -> applyCorrections -> execute`.
+  - Operation dispatch routes by workflow operation contract instead of ad hoc command branching.
+  - Result: Dedicated workflow crate boundary with deterministic execution contract.
+- M-003 Audit event schema and session accounting:
+  - `crates/audit` event model aligns to `contracts::AuditEventData` for transport-safe typed events.
+  - Session lifecycle events (`SessionStarted`, `SessionEnded`, operation events) are mandatory runtime emissions.
+  - Per-run audit bundles and manifest metadata are required traceability artifacts.
+  - Result: Type-safe, consistent audit lifecycle across runtime surfaces.
+
 ---
 
 ## Revision History
@@ -1062,14 +1026,15 @@ Layout detection for drawings, specs, and submittals must follow a profile-first
 | Version | Date | Changes |
 |---------|------|---------|
 | 4.0.0 | 2026-01-21 | Initial architecture document |
-| 4.2.0 | 2026-01-23 | **Aligned with Master Plan V4.2.** Added: (1) Chrome metadata preservation in furniture detection stage, (2) Pattern Development Tool architecture (Phase 0.5 critical infrastructure), (3) Updated component diagram and data flow to include chrome handling, (4) Added medium-specific chrome types, (5) Clarified compiler pipeline stages with chrome reapplication in rendering, (6) Updated type system with ChromeMetadata structures. Simplified: Reduced code examples (moved to DEV_STANDARDS), focused on "what" not "how", cleaner separation between architecture and implementation. |
+| 4.2.0 | 2026-01-23 | **Aligned with MASTER_PLAN.** Added: (1) Chrome metadata preservation in furniture detection stage, (2) Pattern Development Tool architecture (Phase 0.5 critical infrastructure), (3) Updated component diagram and data flow to include chrome handling, (4) Added medium-specific chrome types, (5) Clarified compiler pipeline stages with chrome reapplication in rendering, (6) Updated type system with ChromeMetadata structures. Simplified: Reduced code examples (moved to DEV_STANDARDS), focused on "what" not "how", cleaner separation between architecture and implementation. |
+| 4.2.1 | 2026-03-23 | Added canonical Phase D monorepo integration outcomes (M-001 to M-003): contracts boundary stabilization, workflow gate ordering contract, and typed audit/session lifecycle constraints. |
 
 ---
 
 **Status:** ✅ ACTIVE  
 **Owner:** HLLMR LLC  
-**Last Updated:** January 23, 2026  
-**Version:** 4.2.0
+**Last Updated:** March 23, 2026  
+**Version:** 4.2.1
 
 ---
 

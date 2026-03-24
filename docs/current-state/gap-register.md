@@ -21,16 +21,16 @@ Gap status:
 
 | Gap ID | Crate | File | Item | Gap Type | Severity | Canonical Claim | Status |
 |---|---|---|---|---|---|---|---|
-| G-001 | engine | `crates/engine/src/extractor.rs` | `Extractor::extract()` | PARTIAL | CRITICAL | `ARCHITECTURE_v4_2.md` — Compiler pipeline: Lexer stage converts raw PDF input to LayoutTranscript | Open |
-| G-002 | engine | `crates/engine/src/processor.rs` | `Processor::process()` | NOOP | CRITICAL | `ARCHITECTURE_v4_2.md` — Parser/Optimizer stages normalize, validate, and enrich transcript | Open |
-| G-003 | engine | `crates/engine/src/main.rs` | `fn main()` | STUB | HIGH | `ARCHITECTURE_v4_2.md` — CLI orchestrates full extraction/processing pipeline | Open |
-| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE_v4_2.md` — Extraction backend produces structured PageData with bboxes and text runs | Open |
-| G-005 | pdf-extraction / engine | (boundary) | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE_v4_2.md` — Pipeline connects pdf-extraction output to IR crate types | Open |
-| G-006 | audit | `crates/audit/src/` | Audit hook integration | MISSING-WIRING | MEDIUM | `ARCHITECTURE_v4_2.md` — Audit events generated during extraction and processing | Open |
-| G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS_v4_2.md` — Validation layer enforces all IR invariants at the crate boundary | Open |
-| G-008 | ir | `crates/ir/src/types.rs` | `Document`, `Element` structs | STUB | LOW | `ARCHITECTURE_v4_2.md` — Document type models structured document content; purpose currently unclear | Open |
-| G-009 | engine | `crates/engine/tests/end_to_end_test.rs` | E2E test pipeline invocation | TRIVIAL-TEST | HIGH | `MASTER_PLAN_v4.md` — End-to-end pipeline test validates real PDF → LayoutTranscript path | Open |
-| G-010 | audit | `crates/audit/src/bundle.rs` | Audit unit tests | TRIVIAL-TEST | LOW | `DEV_STANDARDS_v4_2.md` — Tests validate behavior including JSON persistence and event ordering | Open |
+| G-001 | engine | `crates/engine/src/extractor.rs` | `Extractor::extract()` | PARTIAL | CRITICAL | `ARCHITECTURE.md` — Compiler pipeline: Lexer stage converts raw PDF input to LayoutTranscript | Open |
+| G-002 | engine | `crates/engine/src/processor.rs` | `Processor::process()` | NOOP | CRITICAL | `ARCHITECTURE.md` — Parser/Optimizer stages normalize, validate, and enrich transcript | Open |
+| G-003 | engine | `crates/engine/src/main.rs` | `fn main()` | STUB | HIGH | `ARCHITECTURE.md` — CLI orchestrates full extraction/processing pipeline | Open |
+| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE.md` — Extraction backend produces structured PageData with bboxes and text runs | Open |
+| G-005 | pdf-extraction / engine | (boundary) | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE.md` — Pipeline connects pdf-extraction output to IR crate types | Open |
+| G-006 | audit | `crates/audit/src/` | Audit hook integration | MISSING-WIRING | MEDIUM | `ARCHITECTURE.md` — Audit events generated during extraction and processing | Open |
+| G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS.md` — Validation layer enforces all IR invariants at the crate boundary | Open |
+| G-008 | ir | `crates/ir/src/types.rs` | `Document`, `Element` structs | STUB | LOW | `ARCHITECTURE.md` — Document type models structured document content; purpose currently unclear | Open |
+| G-009 | engine | `crates/engine/tests/end_to_end_test.rs` | E2E test pipeline invocation | TRIVIAL-TEST | HIGH | `MASTER_PLAN.md` — End-to-end pipeline test validates real PDF → LayoutTranscript path | Open |
+| G-010 | audit | `crates/audit/src/bundle.rs` | Audit unit tests | TRIVIAL-TEST | LOW | `DEV_STANDARDS.md` — Tests validate behavior including JSON persistence and event ordering | Open |
 
 ---
 
@@ -39,7 +39,7 @@ Gap status:
 | Severity | Meaning |
 |---|---|
 | CRITICAL | Blocks any real end-to-end extraction; the pipeline cannot produce output without this |
-| HIGH | Required for Phase 0 completion per `MASTER_PLAN_v4.md` acceptance criteria |
+| HIGH | Required for Phase 0 completion per `MASTER_PLAN.md` acceptance criteria |
 | MEDIUM | Required for correctness or auditability guarantees stated in canonical docs |
 | LOW | Maintenance debt or minor capability gap; does not block pipeline |
 

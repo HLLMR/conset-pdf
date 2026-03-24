@@ -1,11 +1,11 @@
-# Conset PDF: Transcript Architecture V4.2
+# Conset PDF: Transcript Architecture
 
 **Version:** 4.2.0  
 **Date:** January 23, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
-**Alignment:** ARCHITECTURE V4.2 + DEV_STANDARDS V4.2
+**Alignment:** ARCHITECTURE + DEV_STANDARDS
 
 ---
 
@@ -13,7 +13,7 @@
 
 This document defines the **LayoutTranscript** - the core intermediate representation (IR) for PDF extraction in Conset PDF. The LayoutTranscript is the **backend-agnostic contract** that all PDF extraction libraries must satisfy.
 
-This is a canonical derived document under `MASTER_PLAN_v4.md` per `DOC_GOVERNANCE.md`.
+This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.md`.
 
 **Scope:**
 - LayoutTranscript structure (spans, pages, metadata)
@@ -553,7 +553,7 @@ impl PageContext {
 
 #[tokio::test]
 async fn test_transcript_determinism() {
-    let pdf_path = Path::new("tests/fixtures/sample.pdf");
+    let pdf_path = Path::new("tests/corpus/tier1/simple.pdf");
 
     // Extract 3 times
     let ctx1 = DocumentContext::load(pdf_path).await.unwrap();
@@ -819,7 +819,7 @@ Quality-driven extractor fallback (auto-switching to a secondary extractor when 
 | Version | Date | Changes |
 |---------|------|---------|
 | 4.0.0 | 2026-01-21 | Initial transcript architecture |
-| 4.2.0 | 2026-01-23 | **Aligned with Master Plan V4.2 and ARCHITECTURE V4.2.** Changes: (1) Simplified by removing AbstractTranscript (semantic overlay now medium-specific, in processors), (2) Removed TokenVault (privacy abstraction out of scope), (3) Clarified coordinate normalization to [0, 1] range, (4) Updated BBox to use normalized floats instead of page-relative integers, (5) Changed page numbering to 0-indexed for consistency with Rust conventions, (6) Added PageContext helper patterns, (7) Expanded validation examples, (8) Added determinism test patterns from DEV_STANDARDS. Focus: Deep dive on LayoutIR only, companion to ARCHITECTURE V4.2. |
+| 4.2.0 | 2026-01-23 | **Aligned with MASTER_PLAN and ARCHITECTURE.** Changes: (1) Simplified by removing AbstractTranscript (semantic overlay now medium-specific, in processors), (2) Removed TokenVault (privacy abstraction out of scope), (3) Clarified coordinate normalization to [0, 1] range, (4) Updated BBox to use normalized floats instead of page-relative integers, (5) Changed page numbering to 0-indexed for consistency with Rust conventions, (6) Added PageContext helper patterns, (7) Expanded validation examples, (8) Added determinism test patterns from DEV_STANDARDS. Focus: Deep dive on LayoutIR only, companion to ARCHITECTURE. |
 
 ---
 

@@ -12,7 +12,7 @@ All notable changes to this project are documented in this file.
 - This changelog for milestone tracking and release-level highlights.
 
 ### Changed
-- Documentation authority and canonical references aligned to the `docs/v4/` hierarchy and `docs/DOCUMENTATION_INDEX.md`.
+- Documentation authority and canonical references aligned to the top-level `docs/` canonical set and `docs/DOCUMENTATION_INDEX.md`.
 - README revised for current workspace layout, corpus paths, and active CLI commands.
 - Coverage workflow hardened to emit machine-readable reports (`cobertura.xml`, `lcov.info`) and upload them to Codecov with artifact retention.
 

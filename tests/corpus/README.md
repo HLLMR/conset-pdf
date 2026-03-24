@@ -159,4 +159,4 @@ Corpus files that become redundant or outdated should be:
 
 ## Contact & Questions
 
-For questions about corpus organization or suggestions for new test cases, please consult the development standards in `/docs/DEV_STANDARDS_v4_2.md`.
+For questions about corpus organization or suggestions for new test cases, please consult the development standards in `/docs/DEV_STANDARDS.md`.
