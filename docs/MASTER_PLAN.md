@@ -1,6 +1,6 @@
 # Conset PDF: Master Plan
-**Version:** 4.2.1 (Architecture Execution Update - Monorepo + Tauri GUI Direction)  
-**Date:** March 19, 2026  
+**Version:** 4.2.6 (Operational Trust, Automation, and Knowledge Layer Policy Update)  
+**Date:** March 23, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
 **Doc Status Tag:** Implemented
@@ -85,7 +85,7 @@ General PDF tooling aims to be universal and ends up being unreliable. We aim to
 
 These are **hard commitments** that guide every architectural and implementation decision:
 
-1. **Determinism is sacred.** No runtime randomness. Same input + same profile + same engine version = **identical output**.
+1. **Determinism is sacred.** No runtime randomness. Same input + same detection policy version + same engine version = **identical output**.
 
 2. **Do it right the first time.** Architecture decisions optimize for long-term correctness and maintainability, not short-term demos.
 
@@ -119,11 +119,51 @@ These are **hard commitments** that guide every architectural and implementation
 
 17. **Partial success is success.** If 80/100 sections process correctly, output those 80 and ask user how to handle the 20 failures. Never discard working results because some operations failed.
 
-18. **Medium detection is user-driven.** GUI enforces context through workflow-based file pickers. CLI requires explicit operation flags. No auto-detection—explicit is better than implicit.
+18. **Medium detection is user-driven for processing workflows.** GUI enforces context through workflow-based file pickers. CLI requires explicit operation flags. When a user explicitly invokes a classify, split, or normalize intake operation, autonomous classification executes as direct fulfillment of that intent—this is not auto-detection. Silent auto-selection into a wrong processing workflow remains prohibited.
 
 19. **Accuracy over visual fidelity.** For spec regeneration: textual accuracy 100% required, visual fidelity best-effort. Readable and correct beats pixel-perfect.
 
 20. **Pattern Development Tool is infrastructure, not polish.** The Pattern Dev Tool must be built early (Phase 0.5) as it's a critical development dependency for all pattern-based work (Phases 2-4).
+
+21. **ROI detection is autonomous-first and deterministic.** Production extraction must not require manual per-project profile authoring in normal operation. Manual ROI/profile management is retained as an **admin-only** refinement, debugging, and fallback surface.
+
+22. **Intake Triage is a mandatory pre-Lexer stage.** All multi-file ingestion, bundle assembly, page auditing (rotation, blank pages, corrupt pages), and optional document-type classification happen at Stage 0 before any extraction pipeline stage executes. The Lexer operates only on a `NormalizedIntakeBundle`, never on raw user inputs directly.
+
+23. **`lopdf` is the canonical PDF write backend.** Page-level operations (insert, delete, swap, rotation normalization, bookmark update) use `lopdf` (MIT-licensed, pure Rust, no runtime dependency). PDFium handles read-only extraction. Headless Chrome handles content generation. These three libraries have non-overlapping responsibilities and must not be substituted for each other's roles.
+
+24. **Vector-first deterministic adaptive detection is default.** For vector PDFs, the baseline path uses geometry + text heuristics, deterministic scoring, and explainable tie-breaks. ML and cloud AI are never baseline requirements.
+
+25. **Firm templates are auto-learned, not manually authored as primary UX.** The system should auto-learn relative field ROIs (for example sheet number/name) from deterministic detection and persist as unconfirmed templates; user correction is a lightweight refinement flow, not profile authoring.
+
+26. **Any AI-enhanced path is explicit opt-in and minimized-scope.** AI fallback may run only after low-confidence deterministic failure, must be user-invoked, and should transmit only minimal cropped regions required for recovery, never full sheets by default.
+
+27. **Local micro-ML is assistive, deterministic-bounded, and version-locked.** On-device micro-models may boost confidence on hard edge cases, but baseline deterministic heuristics remain primary. Model version, threshold policy, and fusion math must be audit-logged for every assisted decision.
+
+28. **Power-user LLM integration is validation-only unless explicitly authorized.** API-driven LLM flows may validate ambiguous detections and generate explicit instruction manifests, but cannot silently mutate outputs. All LLM prompts/responses must be captured as redacted audit artifacts with provider/model/version metadata.
+
+29. **Raster PDFs require a first-class OCR path.** If text layer quality is insufficient, pipeline must route through OCR with explicit confidence/provenance tagging and visible review state; OCR text must never be mixed with vector text without source attribution.
+
+30. **Schedule parsing must emit schema-versioned structured outputs.** Table extraction outputs must support machine-consumable export formats (at minimum JSON/CSV/XML) with stable schema contracts and field-level provenance.
+
+31. **Replayable correction manifests are first-class artifacts.** Human corrections must be persistable, versioned, and re-applicable to subsequent runs with deterministic scope checks and audit traces.
+
+32. **Review is provenance-first, not screenshot-first.** Every field, decision, export row, and correction must resolve back to source page, region, method, confidence, and branch reason.
+
+33. **External API paths require redaction and outbound payload control.** Any LLM or third-party service integration must support region-level redaction, payload manifests, and policy modes that can prohibit full-page or full-document transmission.
+
+34. **Batch orchestration and resumability are first-class production capabilities.** Multi-file and project-scale runs must support queueing, partial completion, retry, resume, and explicit per-file/per-page state accounting.
+
+35. **Instruction DSL is the canonical automation contract.** Explicit automation requests, user-authored recipes, and AI-suggested instructions must converge on one typed manifest language with validation before execution.
+
+36. **Confidence is exposed through policy profiles, not raw internals.** User-facing operational modes should tune review strictness and escalation behavior without exposing unstable low-level heuristics directly.
+
+37. **Standards normalization builds on the existing canonical standards scaffold.** UDS/NCS, MasterFormat, and related AEC standards references already recovered from the prototype remain the source scaffold for normalization work; implementation must wire to these canonical docs/data rather than invent parallel mappings.
+
+38. **Native diff and exception triage are core workflows.** The system must be able to emit structured spec, sheet, and packet change reports plus a focused exception queue so operators review only ambiguous or divergent work.
+
+39. **Cross-document entity resolution is strategic infrastructure.** Sheet IDs, section IDs, equipment tags, firms, and related project entities must be linkable across drawings, specs, submittals, and revisions.
+
+40. **Project knowledge indexing is a supported downstream surface.** Once entities and normalized outputs exist, the platform should support searchable project-level lookup over extracted records, links, and provenance.
 
 ---
 
@@ -203,6 +243,7 @@ Each medium has unique structure, chrome patterns, and processing requirements.
 └─────────────────────────────────────────┘
                  │
                  │ CLI/API
+
                  ↓
 ┌─────────────────────────────────────────┐
 │   Open-Source Engine (Apache-2.0)       │
@@ -232,6 +273,7 @@ Each medium has unique structure, chrome patterns, and processing requirements.
 
 Conset PDF operates like a compiler:
 
+0. **Intake Triage:** Normalize raw inputs → `NormalizedIntakeBundle`
 1. **Lexer:** Extract raw layout (spans, bboxes) → `LayoutTranscript`
 2. **Parser:** Build semantic tree → `DocumentAST`
 3. **Optimizer:** Apply edits, validate → `EditableDocModel`
@@ -258,7 +300,11 @@ Conset PDF operates like a compiler:
 | **Language** | Rust | Memory safety, determinism, single-binary deployment |
 | **PDF Extraction** | PDFium (via `pdfium-render`) | Industry-standard, Apache-2.0, proven reliability |
 | **PDF Generation** | Headless Chrome (via `headless_chrome`) | High-fidelity HTML→PDF, CSS support |
+| **PDF Write (page ops)** | `lopdf` | Pure-Rust, MIT-licensed; page-level insert/delete/swap, rotation normalization, bookmark mutation; canonical backend for PdfStitcher (Phase 6) and Intake Triage page normalization |
+| **Local Micro-ML Runtime** | ONNX Runtime (on-device) | Optional confidence boost path for hard edge cases; deterministic-bounded via fixed model/version + logged fusion policy |
+| **OCR (raster path)** | On-device OCR engine (pluggable) | Required fallback for raster/low-text PDFs with confidence + provenance tagging |
 | **Pattern Matching** | `regex` crate | Deterministic, fast, well-tested |
+| **Power-User LLM Validation API** | Provider adapters via contracts | Optional validation/instruction generation path for ambiguous inputs; explicit opt-in and full audit capture |
 | **Serialization** | `serde` + `serde_json` | Standard Rust serialization |
 | **GUI (desktop)** | Tauri | Rust-native desktop shell with strong backend integration |
 | **Testing** | Built-in `cargo test` + golden files | Regression testing |
@@ -587,6 +633,12 @@ impl FurnitureDetector {
 - Parse outline numbering (1.1.A, 1.1.B, etc.)
 - Infer nesting by indent
 
+**S2a: Deterministic spec heading detection (vector-first)**
+- Group spans into lines by y-clustering and stable baseline thresholds.
+- Compute line features (font delta vs body, caps ratio, indent, leading whitespace gap).
+- Detect section starts using CSI patterns (for example `SECTION 23 82 16`) plus typography/spacing rules.
+- Segment section blocks until next heading boundary and emit heading confidence evidence.
+
 **S3: Edit Operations**
 - Insert, delete, replace paragraphs
 - Renumber automatically when needed
@@ -603,6 +655,7 @@ impl FurnitureDetector {
 - Insert new section pages
 - Preserve unchanged pages (byte-identical when possible)
 - Update bookmarks
+- Generate structured section diff/change report and exception list
 
 **Key Insight: Footer-First is Oracle**
 
@@ -627,6 +680,19 @@ Regenerated sections must look indistinguishable from original sections. The chr
 - Detect discipline prefixes (G, M, E, etc.)
 - Build canonical sheet list
 
+**D1a: Deterministic title-block localization (vector-first)**
+- Compute drawing frame by finding the largest thin-line rectangle near page margins.
+- Define four corner candidate bands inside the frame (policy-tunable percentage bands).
+- Score each corner by table-structure density (axis-aligned lines, intersections, rectangular cells).
+- Select highest-scoring corner as title block ROI, then tighten bbox by connected components or bbox merge.
+- Emit explicit diagnostics (`TB_FRAME_MISSING`, `TB_GRID_WEAK`, `TB_MULTI_CORNER_CONFLICT`) with ranking evidence.
+
+**D1b: Deterministic sheet field extraction inside title block**
+- Extract text objects intersecting title-block ROI.
+- Normalize features: relative x/y inside block, font size, caps ratio, bold/regular.
+- Score sheet number and sheet name candidates by pattern + typography + relative position.
+- Persist selected relative ROIs as auto-learned template candidate for firm/layout signature.
+
 **D2: Sheet Matching**
 - Parse sheet IDs from original set (by footer/title block)
 - Parse sheet IDs from addendum
@@ -638,12 +704,13 @@ Regenerated sections must look indistinguishable from original sections. The chr
 - Preserve unchanged sheets (byte-identical)
 - Update bookmarks
 - Generate replacement report
+- Generate sheet delta report with matched/added/removed/renamed sheets and unresolved exceptions
 
 **D4: Schedule Extraction (Optional)**
 - Extract tabular data from equipment schedules
 - Handle multi-table pages
 - Handle rotated text, merged cells
-- Export to CSV/JSON
+- Export to schema-versioned JSON/CSV/XML with field-level provenance
 
 **No regeneration.** Drawings are extracted and indexed, not re-typeset.
 
@@ -1765,7 +1832,83 @@ These are retained as active planning constraints until closed by implementation
 
 ### Chrome Detection Threshold Policy
 
-Chrome/furniture thresholds must be treated as profile-tunable parameters, not permanently hardcoded constants. Defaults may exist, but profile overrides and validation messaging are required.
+Chrome/furniture and ROI scoring thresholds must be treated as policy-tunable parameters, not permanently hardcoded constants. Defaults may exist, but admin-only overrides and validation messaging are required.
+
+### ROI Detection Strategy Policy
+
+ROI detection follows an autonomous deterministic strategy by default:
+
+1. Detection must execute from deterministic heuristics and ordered scoring rules, not manual profile prerequisites.
+2. Candidate ROI generation, ranking, and tie-breaks must be deterministic and auditable.
+3. Manual ROI/profile edits are admin-only and intended for refinement, diagnostics, and controlled fallback.
+4. Low-confidence detection must emit explicit warnings and evidence, never silent coercion.
+5. Any manual override path must preserve replayability by persisting effective ROI decisions in run artifacts.
+
+### Deterministic Adaptive Detection Policy
+
+Vector-PDF detection and extraction should follow a deterministic adaptive strategy:
+
+1. Baseline detection must use deterministic geometry + text features first (frame/corner priors, table-structure score, typed pattern rules).
+2. Auto-learned firm/layout templates are generated from successful detections and applied forward as accelerators, not authoritative black boxes.
+3. Template application must remain auditable: include template ID, version, confidence delta, and divergence checks against fresh detection.
+4. If deterministic path is low-confidence, system emits explicit review state and evidence bundle; no silent downgrade.
+5. AI-enhanced fallback is optional, explicit opt-in, and bounded to cropped regions needed for recovery.
+
+### Local Micro-ML Assist Policy
+
+On-device micro-model assist should remain bounded and auditable:
+
+1. Micro-ML runs only after deterministic baseline scoring and only when confidence is in configured gray-zone ranges.
+2. Model inference must be version-locked and reproducible; confidence fusion must be explicit, deterministic, and policy-configured.
+3. Decision artifacts must include baseline score, model score, fused score, threshold basis, and final branch reason.
+
+### Power-User LLM Validation Policy
+
+LLM-backed power-user workflows are optional and contract-bound:
+
+1. LLM validation/instruction generation requires explicit user invocation and cannot run silently.
+2. LLM outputs must be treated as advisory unless user promotes them to executable instruction manifests.
+3. Prompt/response traceability must be preserved in audit artifacts with sensitive content redaction policy.
+
+### Raster OCR Policy
+
+Raster or low-text-layer pages must follow explicit OCR routing:
+
+1. Stage 0 detects low text-layer quality and marks pages for OCR path.
+2. OCR text extraction must capture per-line/per-block confidence and source tag (`ocr` vs `vector`).
+3. OCR-derived decisions with low confidence require explicit review warnings and overlays.
+
+### Structured Schedule Data Policy
+
+Schedule extraction outputs must be contract-first:
+
+1. Canonical internal schedule schema must be versioned before broad export.
+2. Exports must include JSON/CSV/XML support with stable field mappings.
+3. Every exported record requires page/region provenance and parser confidence metadata.
+
+### Replayable Corrections and Automation Policy
+
+1. Corrections must compile into typed manifests with explicit scope, target IDs, and replay guards.
+2. Manual review actions, power-user instructions, and approved AI suggestions must converge on the same executable manifest surface.
+3. Manifest application must be deterministic, dry-runnable, and auditable before any file mutation occurs.
+
+### Operational Trust and Review Policy
+
+1. Native diff/change reports are required outputs for revision workflows where applicable.
+2. Exception queues must focus operator attention on ambiguous, conflicting, drifted, or low-confidence cases.
+3. Drift metrics, fallback rates, and review burden must be measurable against the corpus over time.
+
+### Standards Normalization Policy
+
+1. Normalization work must reuse canonical AEC standards references already maintained in `AEC_STANDARDS.md`, `MASTERFORMAT_REFERENCE.md`, and related standards docs.
+2. Normalized IDs, aliases, and mapped classifications must preserve both canonical form and source-observed raw value.
+3. Changes to normalization mappings must be versioned and backward-auditable.
+
+### Cross-Document Knowledge Policy
+
+1. Entity resolution links must retain evidence basis and confidence.
+2. Search/index surfaces must operate on canonical normalized records plus provenance, not ad hoc text caches.
+3. Privacy policy controls must propagate to any persisted searchable index.
 
 ---
 
@@ -1782,8 +1925,8 @@ This document is **constitutional**. Changes require explicit approval.
 **Current Status:** ✅ READY FOR IMPLEMENTATION
 
 **Owner:** HLLMR LLC  
-**Last Updated:** March 19, 2026  
-**Version:** 4.2.1 (Architecture Execution Update - Monorepo + Tauri GUI Direction)
+**Last Updated:** March 23, 2026  
+**Version:** 4.2.6 (Operational Trust, Automation, and Knowledge Layer Policy Update)
 
 ---
 
@@ -1795,6 +1938,11 @@ This document is **constitutional**. Changes require explicit approval.
 | 4.1.0 | 2026-01-22 | Production-ready architecture. Removed Python. Clarified PDFium. Simplified profile system. Defined phase definitions. Locked tech stack. |
 | **4.2.0** | **2026-01-23** | **Senior Architect Review - Phase Reorganization.** Key changes: (1) **Moved Pattern Dev Tool from Phase 12 to Phase 0.5** - recognized as critical development infrastructure, not polish. (2) **Added Chrome Metadata Preservation** - explicit extraction, storage, and reuse of headers/footers/branding for professional output. (3) **Added Development Workflow section** - micro-tasking strategy for AI coding agents, test-driven development, rubber duck reviews, debug logging standards. (4) **Added Non-Negotiable #6** - chrome metadata must be preserved. (5) **Added Non-Negotiable #20** - Pattern Dev Tool is infrastructure. (6) **Clarified Desktop-First GUI strategy** - defer web to Phase 11+ unless customer demand. (7) **Updated Glossary** - added Pattern Dev Tool, Chrome Metadata, Micro-Task. (8) **Updated Code Review Checklist** - added debug logging and micro-task commit requirements. |
 | **4.2.1** | **2026-03-19** | **Architecture Execution Update - Monorepo + Tauri GUI Direction.** Key changes: (1) Added monorepo repository strategy with hard package boundaries. (2) Standardized desktop direction on Tauri. (3) Added contract-first backend/frontend integration guardrails. (4) Restored documentation authority block and imported workflow-gap constraints from the prior constitutional plan during merge into `MASTER_PLAN.md`. |
+| **4.2.2** | **2026-03-23** | **Autonomous ROI Detection Policy Update.** Key changes: (1) Promoted autonomous deterministic ROI detection to first-class strategy, (2) retained manual ROI/profile management as admin-only refinement/fallback, (3) replaced profile-tunable wording with policy/admin-override wording for thresholds, (4) added explicit ROI strategy policy block in Known Workflow Gaps constraints. |
+| **4.2.3** | **2026-03-23** | **Multi-file Ingestion & Normalization Policy Update.** Key changes: (1) Added Intake Triage as mandatory pre-Lexer Stage 0 with `NormalizedIntakeBundle` output, (2) revised Non-Negotiable #18 to permit autonomous classification on explicit user-invoked classify/split/normalize operations, (3) added Non-Negotiable #22 (Intake Triage) and #23 (`lopdf` as canonical PDF write backend), (4) added `lopdf` to tech stack table with explicit role delineation (PDFium = read-only extraction, lopdf = page write ops, headless Chrome = content generation). |
+| **4.2.4** | **2026-03-23** | **Deterministic Adaptive Detection & Template Policy Update.** Key changes: (1) Added vector-first deterministic adaptive detection policy and auto-learned firm-template policy, (2) added optional AI fallback guardrails (explicit opt-in, cropped region scope), (3) extended drawings/spec processing sections with deterministic title-block and heading extraction steps, (4) aligned governance language with explainable template-assisted workflows. |
+| **4.2.5** | **2026-03-23** | **Assisted Intelligence, OCR, and Schedule Data Policy Update.** Key changes: (1) Added local micro-ML assist policy (on-device, deterministic-bounded, version-locked), (2) added power-user LLM validation/instruction API policy (explicit opt-in, advisory-by-default, auditable), (3) added first-class raster OCR policy with confidence/provenance requirements, (4) upgraded schedule extraction exports to schema-versioned JSON/CSV/XML contracts. |
+| **4.2.6** | **2026-03-23** | **Operational Trust, Automation, and Knowledge Layer Policy Update.** Key changes: (1) Added replayable correction manifests, provenance-first review, privacy/redaction, batch orchestration, and instruction DSL policies, (2) promoted native diff/exception triage workflows, (3) anchored standards normalization to existing canonical UDS/NCS/MasterFormat scaffold, (4) added cross-document entity resolution and project knowledge indexing as strategic capabilities. |
 
 ---
 

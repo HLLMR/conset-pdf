@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.2.0  
-**Date:** January 23, 2026  
+**Version:** 4.2.6  
+**Date:** March 23, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -62,7 +62,7 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 ### Principle 2: Determinism First
 
-**Statement:** Same input + same profile + same engine version = identical output, always.
+**Statement:** Same input + same detection policy version + same engine version = identical output, always.
 
 **Why:** AEC users need reproducible results for audit trails. Determinism is the moat.
 
@@ -100,7 +100,8 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 **Why:** Clear separation of concerns, testable stages, explainable transformations.
 
 **Stages:**
-1. **Lexer (Layout Extraction):** Raw PDF → LayoutTranscript (geometry + text)
+0. **Intake Triage (Pre-Lexer):** Raw user inputs → `NormalizedIntakeBundle` (multi-file assembly, page audit, optional classification)
+1. **Lexer (Layout Extraction):** `NormalizedIntakeBundle` → LayoutTranscript (geometry + text)
 2. **Parser (Semantic Analysis):** LayoutTranscript → DocumentAST (hierarchical structure)
 3. **Optimizer (Editing):** DocumentAST → EditableDocModel (with applied edits)
 4. **Code Generator (Rendering):** EditableDocModel → OutputPDF (regenerated content)
@@ -346,7 +347,38 @@ The stage contracts below define the target behavior. Current implementation sta
 
 ### Stage 1: Layout Extraction (Lexer)
 
-**Input:** PDF file (raw bytes)
+
+### Stage 0: Intake Triage (Pre-Lexer)
+
+**Input:** One or more raw user-supplied PDF files + optional user declarations (addenda sequence, operation intent)
+
+**Process:**
+1. Validate each file is a readable PDF; emit `IntakeIssue` records for unreadable inputs rather than hard-failing
+2. Detect page rotation from PDFium page-dict metadata; build per-page rotation manifest
+3. Detect blank pages and suspiciously low text density; record in intake issue log
+4. Detect raster/low-text pages and route to OCR path with explicit source tagging and confidence requirements
+5. Assemble multi-file inputs into an ordered `NormalizedIntakeBundle` (base document + addenda in declared sequence, deterministic fallback to filename order)
+6. When explicitly invoked by user: classify page ranges by medium (specs/drawings/submittals) using available furniture patterns; output advisory classification manifest for user review before any destructive split
+
+**Output:** `NormalizedIntakeBundle`
+- Ordered page source list with per-page `IntakeIssue` records
+- Rotation normalization manifest (corrections applied and evidence)
+- OCR routing manifest for raster/low-text pages
+- Optional: classification manifest (`Vec<PageRangeClassification>` with medium assignment and confidence)
+
+**Invariants:**
+- All intake issues are recorded and surfaced; none are silently dropped
+- Addenda ordering is deterministic and stated explicitly in the bundle manifest
+- Classification output is advisory: no processing workflow executes on it without explicit user confirmation
+- Stage 0 is idempotent: same inputs produce identical `NormalizedIntakeBundle`
+
+**Write backend:** Rotation correction uses `lopdf` for page-level `/Rotate` normalization. PDFium is read-only at this stage.
+
+---
+
+### Stage 1: Layout Extraction (Lexer)
+
+**Input:** Normalized PDF file (from `NormalizedIntakeBundle`, rotation-corrected and validated by Stage 0)
 
 **Process:**
 1. Load PDF with PDFium
@@ -988,16 +1020,83 @@ Extraction must follow a single-pass, cache-and-serve model:
 4. Backend failure must trigger explicit controlled fallback, not silent quality degradation.
 5. Backend geometric fidelity differences are first-class architectural properties, not implementation details — they directly affect downstream analysis capability.
 
-### Profile-Driven Detection Architecture
+### Autonomous Deterministic ROI Detection Architecture
 
-Layout detection for drawings, specs, and submittals must follow a profile-first strategy:
+Layout detection for drawings, specs, and submittals must follow an autonomous-first deterministic strategy:
 
-1. High-confidence detection requires explicit user-controlled profiles with deterministic ROI coordinates, not probabilistic auto-inference.
-2. Layout profiles must specify ordered ROI fallbacks (ROI-1, ROI-2, ...) for bounded resilience without unconstrained page-wide searching.
-3. Profile schemas must include strict validation gates at load time (required fields, ROI bounds, shape checks) before any execution.
-4. Explicit diagnostic failure codes per ROI (e.g., `ROI_EMPTY`, `ROI_LOW_DENSITY`, `ROI_NO_PATTERN_MATCH`) are required to enable profile debugging.
-5. Heuristic fallback must be feature-flagged to signal architectural direction while preserving recovery capability.
-6. ROI results with low-confidence IDs must be accepted with warning rather than silently routing to fallback.
+1. High-confidence detection is achieved through deterministic candidate generation and scoring, not manual profile prerequisites.
+2. ROI candidate generation must be bounded and ordered (for example fixed band scans, anchor extraction passes, and deterministic tie-break rules).
+3. Detection policy schemas must include strict validation gates at load time (required fields, ROI bounds, score weights, threshold checks) before execution.
+4. Explicit diagnostic failure codes per ROI (for example `ROI_EMPTY`, `ROI_LOW_DENSITY`, `ROI_NO_PATTERN_MATCH`) are required to enable debugging and auditability.
+5. Manual ROI/profile management is retained as an admin-only refinement and controlled fallback path; it is not the default production operating mode.
+6. ROI results with low-confidence IDs must be accepted with warning and full evidence logging rather than silently rerouting.
+
+### Vector-First Deterministic Adaptive Detection Architecture
+
+For vector PDFs, detection should be deterministic and adaptive without making ML a baseline requirement:
+
+1. Normalize orientation first, then classify page medium using deterministic geometry/text features (for example text density vs vector-segment density).
+2. Drawing pages use frame-and-corner priors: detect largest thin-line frame near margins, then evaluate corner bands for table-structure score.
+3. Title block localization uses geometry-first scoring (axis-aligned line counts, intersections, rectangular cell density), with deterministic tie-break ordering.
+4. Field extraction inside title block (sheet number, sheet name, firm markers) uses text pattern + typography + relative-position scoring.
+5. Successful detections emit auto-learned firm/layout templates (relative ROIs) that are versioned, auditable accelerators, not hidden state.
+6. Template replay must include divergence checks against fresh detection and explicit review flags on drift.
+7. Spec heading detection is vector-text-first: line clustering, typography deltas, caps ratio, indent/spacing cues, and deterministic heading rules.
+8. AI-enhanced fallback remains optional and explicit: run only on low-confidence failures, prefer on-device first, and scope cloud payloads to cropped regions.
+
+### Local Micro-ML Confidence Assist Architecture
+
+Local micro-model inference is an optional confidence-assist stage, not a baseline replacement:
+
+1. Execute only in bounded gray-zone confidence intervals after deterministic baseline scoring.
+2. Use fixed on-device model versions and deterministic preprocessing to preserve reproducibility.
+3. Fuse baseline + model confidence via explicit deterministic policy (weighted or rule-based) with tie-break ordering.
+4. Emit full confidence provenance (`baseline_score`, `model_score`, `fused_score`, threshold source) in audit artifacts.
+
+### Power-User LLM Validation and Instruction API Architecture
+
+LLM integration is an explicit advanced workflow surface:
+
+1. Expose API endpoints/contracts for validation requests and instruction-set generation from ambiguous detections.
+2. Treat LLM output as advisory unless user promotes it to executable instruction manifest.
+3. Persist provider/model/version, prompt hash, and response hash in audit metadata with redaction-safe payload storage.
+4. Enforce no-silent-execute: no automatic pipeline mutation from LLM output without explicit user confirmation.
+
+### Raster OCR and Structured Schedule Extraction Architecture
+
+Raster handling and table extraction must remain contract-first:
+
+1. OCR pipeline produces text spans with confidence and source tags (`ocr`, `vector`) preserved end-to-end.
+2. Downstream parsing must be able to branch by source quality and confidence thresholds.
+3. Schedule/table parser outputs canonical schema records with page/region provenance and parser confidence.
+4. Export adapters produce JSON/CSV/XML while preserving canonical schema field mapping and version tags.
+
+### Replayable Corrections and Instruction Manifest Architecture
+
+Corrections and automation requests should converge on one typed manifest system:
+
+1. Human review corrections, power-user commands, and approved AI suggestions compile into the same validated instruction DSL.
+2. Manifests must support dry-run validation, target resolution, scope guards, and replay checks before execution.
+3. Correction replay must preserve original evidence links and record divergence when applied to later document revisions.
+
+### Operational Trust, Privacy, and Queueing Architecture
+
+Operational control surfaces must remain explicit and auditable:
+
+1. Native diff/change reports are first-class workflow outputs, not ad hoc UI renderings.
+2. Exception triage queue items must carry reason code, severity, evidence refs, and recommended next action.
+3. Batch orchestration must track resumable job state at job/file/page granularity.
+4. External API boundaries must enforce redaction policy, outbound payload manifests, and provider audit metadata.
+5. Confidence policy profiles expose stable user-facing behavior modes without leaking unstable internal thresholds directly.
+
+### Standards Normalization, Entity Resolution, and Knowledge Index Architecture
+
+Normalization and search must build from canonical standards and linked entities:
+
+1. Standards normalization reuses canonical UDS/NCS/MasterFormat references and preserves raw-to-canonical mapping evidence.
+2. Entity resolution links across drawings/specs/submittals/revisions must record basis, confidence, and merge history.
+3. Searchable project knowledge index stores canonical normalized records plus provenance links, not detached free-text only.
+4. Diff and compare workflows consume normalized entities and standards-aware ordering to avoid noisy false deltas.
 
 ### Phase D Monorepo Integration Outcomes (M-001 to M-003)
 
@@ -1028,13 +1127,18 @@ These integration outcomes are canonical architectural constraints derived from 
 | 4.0.0 | 2026-01-21 | Initial architecture document |
 | 4.2.0 | 2026-01-23 | **Aligned with MASTER_PLAN.** Added: (1) Chrome metadata preservation in furniture detection stage, (2) Pattern Development Tool architecture (Phase 0.5 critical infrastructure), (3) Updated component diagram and data flow to include chrome handling, (4) Added medium-specific chrome types, (5) Clarified compiler pipeline stages with chrome reapplication in rendering, (6) Updated type system with ChromeMetadata structures. Simplified: Reduced code examples (moved to DEV_STANDARDS), focused on "what" not "how", cleaner separation between architecture and implementation. |
 | 4.2.1 | 2026-03-23 | Added canonical Phase D monorepo integration outcomes (M-001 to M-003): contracts boundary stabilization, workflow gate ordering contract, and typed audit/session lifecycle constraints. |
+| 4.2.2 | 2026-03-23 | Replaced profile-first ROI policy with autonomous deterministic ROI policy; retained manual ROI/profile editing as admin-only refinement/fallback and updated determinism statement wording to detection policy versioning. |
+| 4.2.3 | 2026-03-23 | Added Intake Triage as Stage 0 (pre-Lexer): `NormalizedIntakeBundle` output, multi-file assembly, page audit, rotation normalization (`lopdf`), and optional explicit-invoke classification with advisory manifest. Updated Principle 4 stages to include Stage 0. |
+| 4.2.4 | 2026-03-23 | Added vector-first deterministic adaptive architecture constraints: frame/corner title-block localization, deterministic field scoring, auto-learned firm templates with drift checks, spec heading detection rules, and explicit-opt-in bounded AI fallback policy. |
+| 4.2.5 | 2026-03-23 | Added local micro-ML assist, power-user LLM validation/instruction API constraints, raster OCR routing in Stage 0, and contract-first schedule extraction/export architecture (JSON/CSV/XML). |
+| 4.2.6 | 2026-03-23 | Added architecture constraints for replayable corrections and instruction DSL, provenance-first operational review, privacy/redaction controls, batch queueing/resume, standards normalization on existing canonical scaffold, cross-document entity resolution, and project knowledge indexing. |
 
 ---
 
 **Status:** ✅ ACTIVE  
 **Owner:** HLLMR LLC  
 **Last Updated:** March 23, 2026  
-**Version:** 4.2.1
+**Version:** 4.2.6
 
 ---
 
