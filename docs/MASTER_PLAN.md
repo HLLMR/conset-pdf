@@ -1353,6 +1353,21 @@ cargo run -- apply-addendum \
 - Migrate workflows lane-by-lane with explicit parity checks
 - Remove legacy screens once parity + soak testing pass
 
+**GUI agent execution protocol (required):**
+- Use a two-track model.
+- **Track A (pre-Phase 11 prep):** contract shaping, UI state models, mock adapters, and integration scaffolding.
+- **Track B (Phase 11+ runtime):** real backend integration lane-by-lane after dependency gates pass.
+- Require dependency gates before enabling production lane execution.
+- **Gate 0:** contract boundary and integration tests are stable.
+- **Gate 1:** baseline extraction chain closed (G-004 -> G-005 -> G-001 -> G-002 -> G-003 -> G-009).
+- **Gate 2:** review inputs available (warnings/failures consumable, audit hooks wired).
+- **Gate 3:** export inputs stable (deterministic artifact selection, partial-success validated).
+- Use canonical lane order.
+- **Lane 1 (MVP):** Add files -> Start -> Review -> Export.
+- **Lane 2:** Advanced audit/provenance detail behind explicit toggle.
+- **Lane 3:** Higher-order workflows (compare/exception and additional lanes).
+- Promote lanes only when integration tests pass, determinism checks pass, and silent-failure regressions are absent.
+
 **Decision Point: Desktop vs Web**
 
 **Start with desktop only:**
@@ -1445,6 +1460,28 @@ This happens because:
 ```
 
 **Time per task:** 15-30 minutes (not 3 hours of mystery code)
+
+### GUI Workstream Protocol (Phase 11+)
+
+For GUI work, use the same micro-task discipline and enforce lane and gate order.
+
+**Required GUI execution sequence:**
+1. Start with **Track A** tasks only (contracts, state, and test scaffolding) until backend gates are satisfied.
+2. Enable **Track B** runtime integration only for lanes with green gates.
+3. Migrate one lane at a time; do not run broad multi-lane rewrites.
+4. Keep the default UX simple-first in all lanes: Add files, Start processing, Review flagged items, Export.
+5. Keep advanced diagnostics hidden by default behind an explicit toggle.
+
+**Agent packet requirements for GUI tasks:**
+1. Explicit entry gate (0-3).
+2. Scope for the current lane only.
+3. Acceptance criteria with deterministic tests.
+4. Handoff note listing blockers and next dependency owner.
+
+**Do not claim production readiness for any GUI lane unless:**
+1. Gate conditions are met.
+2. Integration and determinism tests pass twice consecutively.
+3. Parity checks for that lane are documented.
 
 ---
 

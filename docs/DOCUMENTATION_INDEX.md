@@ -2,7 +2,7 @@
 
 **Repository**: conset-pdf  
 **Version**: 2.0.0  
-**Last Updated**: March 22, 2026  
+**Last Updated**: March 24, 2026  
 **Status**: Active canonical index  
 **Doc Status Tag:** Implemented
 
@@ -94,3 +94,12 @@ Reference the data recovered from the prototype (now at top-level `docs/` alongs
 - [UDS_DISCIPLINES.md](./UDS_DISCIPLINES.md) — Full UDS discipline table (21 discipline groups, ~100 sub-disciplines with 4-char codes, sort order, and descriptions); canonical source for `crates/standards-data`
 - [MASTERFORMAT_REFERENCE.md](./MASTERFORMAT_REFERENCE.md) — CSI MasterFormat 2018 divisions (35 entries) and pre-2004 legacy migration table with range-based lookup algorithm
 - [DRAWINGS_CLASSIFICATION.md](./DRAWINGS_CLASSIFICATION.md) — Drawing discipline classification algorithm: UDS single-letter designators, multi-letter aliases with confidence scores, `C`-designator disambiguation, and sort-order heuristic table
+
+### For GUI Workstream Execution (Phase 11+)
+
+The GUI agent execution protocol and workstream governance rules live in `MASTER_PLAN.md` in two locations:
+
+- **Phase 11+ guardrails — "GUI agent execution protocol (required)"**: Two-track model (Track A prep / Track B runtime), dependency Gates 0–3, canonical Lane order (Lane 1 MVP → Lane 2 advanced → Lane 3 higher-order), and lane promotion criteria. Agents must read this section before beginning any GUI implementation work.
+- **Development Workflow — "GUI Workstream Protocol (Phase 11+)"**: Required execution sequence, agent packet requirements, and production readiness rules governing when Track B runtime integration may begin.
+
+Quick reference: all GUI-facing contract types (`WorkflowRequest`, `WorkflowResponse`, `OperationStatus`, `OperationResult`, `AuditEventData`) live in `crates/contracts/src/lib.rs`. GUI command stubs live in `apps/desktop-gui/src/lib.rs`. Integration tests for IPC contract compliance live in `tests/integration/gui_ipc_test.rs`.
