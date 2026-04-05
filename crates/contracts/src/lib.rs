@@ -90,6 +90,9 @@ pub enum WorkflowOperation {
     SpecsPatch,
     /// Render a `LayoutTranscript` JSON as per-page PNG overlays for layout inspection.
     Visualize,
+    /// Render per-page PNGs with furniture regions (header/footer/body bands) and
+    /// section boundaries marked from a `SegmentIndex` JSON.
+    VisualizeSegments,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

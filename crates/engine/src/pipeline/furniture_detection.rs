@@ -4,14 +4,14 @@
 //! no semantic document content: running headers/footers, stamp/revision blocks,
 //! project title blocks, and form-label separators.
 //!
-//! Detecting furniture before the parsing stage allows the parser to ignore it and
-//! focus on real content spans.  Detected furniture is annotated on the transcript
-//! in-place rather than removed, so the audit trail remains complete.
+//! # Phase 2 implementation note
 //!
-//! # Status
+//! Furniture detection for section segmentation is handled by the standalone
+//! [`crate::segment`] module which operates on a completed transcript, rather than
+//! by in-place span annotation here.  In-place annotation (adding a `furniture_role`
+//! to each `Span`) is deferred to Phase 3 when the parser needs to skip chrome.
 //!
-//! Stub — returns the transcript unchanged.  Phase 1 will implement medium-specific
-//! detectors (spec, drawing, submittal) as described in the V4.2 architecture.
+//! This stage remains a pass-through so the pipeline shape is preserved.
 
 use crate::error::Result;
 use conset_pdf_ir::LayoutTranscript;

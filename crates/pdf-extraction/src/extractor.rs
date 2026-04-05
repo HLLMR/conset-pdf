@@ -379,6 +379,76 @@ impl PdfiumExtractor {
         debug!("Saved overlay for page {page_index} → {}", output_path.display());
         Ok(())
     }
+
+    /// Renders a single PDF page with color-coded span bounding-box overlays.
+    ///
+    /// Each entry in `colored_spans` is `(bbox, [r, g, b])`.  The alpha value is
+    /// fixed at 230 (same as `render_page_with_spans`).  All other behaviours
+    /// (1400 px target width, 2-px rectangle outline) are identical.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`ExtractionError`] if the PDF cannot be loaded, the page cannot
+    /// be rendered, or saving the output image fails.
+    pub fn render_page_with_colored_spans(
+        &self,
+        pdf_path: &str,
+        page_index: usize,
+        colored_spans: &[(conset_pdf_ir::BBox, [u8; 3])],
+        output_path: &std::path::Path,
+    ) -> Result<()> {
+        use pdfium_render::prelude::PdfRenderConfig;
+
+        let document =
+            self.pdfium.load_pdf_from_file(pdf_path, None).map_err(|e| {
+                crate::error::ExtractionError::pdf_error(format!(
+                    "Failed to load PDF for rendering: {e}"
+                ))
+            })?;
+
+        if page_index >= document.pages().len() as usize {
+            return Err(crate::error::ExtractionError::page_not_found(page_index));
+        }
+
+        #[allow(clippy::cast_possible_truncation)]
+        let page_index_u16 = page_index as u16;
+
+        let page = document.pages().get(page_index_u16).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!("Failed to get page: {e}"))
+        })?;
+
+        let render_config = PdfRenderConfig::new()
+            .set_target_width(1400)
+            .render_form_data(true)
+            .render_annotations(false);
+
+        let bitmap = page.render_with_config(&render_config).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!("Page render failed: {e}"))
+        })?;
+
+        let mut img = bitmap.as_image().into_rgba8();
+        let fw = f64::from(img.width());
+        let fh = f64::from(img.height());
+
+        for (bbox, rgb) in colored_spans {
+            let color = image::Rgba([rgb[0], rgb[1], rgb[2], 230u8]);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let (bx, by, bw, bh) = (
+                (bbox.x * fw) as u32,
+                (bbox.y * fh) as u32,
+                ((bbox.width * fw) as u32).max(1),
+                ((bbox.height * fh) as u32).max(1),
+            );
+            draw_rect_outline(&mut img, bx, by, bw, bh, color);
+        }
+
+        img.save(output_path).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!("Failed to save overlay PNG: {e}"))
+        })?;
+
+        debug!("Saved colored overlay for page {page_index} → {}", output_path.display());
+        Ok(())
+    }
 }
 
 /// Draws a 2-px green outline rectangle on `img`.

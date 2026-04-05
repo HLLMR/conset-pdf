@@ -590,6 +590,7 @@ dependencies = [
  "conset-pdf-ir",
  "env_logger",
  "log",
+ "regex",
  "thiserror 2.0.18",
 ]
 

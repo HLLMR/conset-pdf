@@ -378,3 +378,225 @@ fn cli_extract_spec_coordinates_not_inverted() {
         "Last span Y={last_y:.4} should be greater than first span Y={first_y:.4}"
     );
 }
+
+// ── Phase 2: Segment + VisualizeSegments tests ────────────────────────────────
+
+/// Helper: run `backend-cli segment --input <json> --output <out>`.
+fn run_segment(transcript_json: &PathBuf, out_json: &PathBuf) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("segment")
+        .arg("--input")
+        .arg(transcript_json)
+        .arg("--output")
+        .arg(out_json)
+        .output()
+        .expect("failed to spawn backend-cli segment");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "segment exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("segment stdout must be valid JSON WorkflowResponse")
+}
+
+/// Helper: run `backend-cli visualize-segments --input <json> --output <dir>`.
+fn run_visualize_segments(segment_json: &PathBuf, out_dir: &PathBuf) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("visualize-segments")
+        .arg("--input")
+        .arg(segment_json)
+        .arg("--output")
+        .arg(out_dir)
+        .output()
+        .expect("failed to spawn backend-cli visualize-segments");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "visualize-segments exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("visualize-segments stdout must be valid JSON")
+}
+
+/// Assert segment operation succeeded and return the section count.
+fn assert_segment_ok(resp: &serde_json::Value) -> usize {
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert_eq!(status, "succeeded", "segment status was not succeeded: {resp}");
+    let summary = resp["result"]["summary"].as_str().unwrap_or("");
+    // Format: "Segmented N section(s) from P pages (C% coverage)"
+    summary
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+/// Segment a SPEC document: should detect multiple CSI sections with reasonable coverage.
+#[test]
+fn cli_segment_spec_pdf() {
+    let tmp = tmp_dir("segment-spec");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let transcript_json = tmp.join("transcript.json");
+    let segment_json = tmp.join("segment-index.json");
+
+    run_extract(&pdf, &transcript_json);
+    let resp = run_segment(&transcript_json, &segment_json);
+    assert_envelope(&resp);
+    let section_count = assert_segment_ok(&resp);
+    assert!(
+        section_count >= 1,
+        "SPEC fixture should produce at least one section, got {section_count}"
+    );
+
+    assert!(segment_json.exists(), "segment index JSON not written");
+
+    // Parse the segment index and assert coverage > 0.
+    let text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&text).expect("segment index must be JSON");
+
+    let coverage = idx["coverage"]["coverage_ratio"]
+        .as_f64()
+        .expect("coverage_ratio must be f64");
+    assert!(
+        coverage > 0.0,
+        "SPEC segment index should have positive coverage, got {coverage}"
+    );
+
+    let sections = idx["sections"].as_array().expect("sections must be array");
+    assert!(
+        !sections.is_empty(),
+        "sections array must not be empty"
+    );
+}
+
+/// Segment a simple document: coverage and section count may be zero, but the
+/// command must succeed and produce a valid segment index.
+#[test]
+fn cli_segment_simple_pdf() {
+    let tmp = tmp_dir("segment-simple");
+    let pdf = tier1("simple.pdf");
+    let transcript_json = tmp.join("transcript.json");
+    let segment_json = tmp.join("segment-index.json");
+
+    run_extract(&pdf, &transcript_json);
+    let resp = run_segment(&transcript_json, &segment_json);
+    assert_envelope(&resp);
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "segment must succeed even with no sections detected"
+    );
+    assert!(segment_json.exists(), "segment index JSON not written");
+
+    // Segment index must be parseable and contain required fields.
+    let text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&text).expect("segment index must be JSON");
+    assert!(idx.get("source_path").is_some(), "segment index missing source_path");
+    assert!(idx.get("coverage").is_some(), "segment index missing coverage");
+    assert!(idx.get("sections").is_some(), "segment index missing sections");
+}
+
+/// Dry-run segment: must succeed without writing any output file.
+#[test]
+fn cli_segment_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("segment-dry-run");
+    let pdf = tier1("simple.pdf");
+    let transcript_json = tmp.join("transcript.json");
+    let sentinel = tmp.join("should_not_exist.json");
+
+    run_extract(&pdf, &transcript_json);
+
+    let output = Command::new(&exe)
+        .arg("segment")
+        .arg("--input")
+        .arg(&transcript_json)
+        .arg("--output")
+        .arg(&sentinel)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli segment");
+
+    assert!(output.status.success(), "segment dry-run exited non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("segment dry-run stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "succeeded");
+    assert!(!sentinel.exists(), "segment dry-run must not write output file");
+}
+
+/// Full round-trip for SPEC: extract → segment → visualize-segments.
+/// Verifies that visualize-segments writes one PNG per page.
+#[test]
+fn cli_segment_and_visualize_segments_spec_pdf() {
+    let tmp = tmp_dir("seg-vis-spec");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let transcript_json = tmp.join("transcript.json");
+    let segment_json = tmp.join("segment-index.json");
+    let vis_dir = tmp.join("vis");
+
+    let extract_resp = run_extract(&pdf, &transcript_json);
+    let page_count = assert_extract_ok(&extract_resp);
+
+    run_segment(&transcript_json, &segment_json);
+
+    let vis_resp = run_visualize_segments(&segment_json, &vis_dir);
+    assert_envelope(&vis_resp);
+    assert_eq!(
+        vis_resp["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "visualize-segments must succeed: {vis_resp}"
+    );
+
+    let png_count = std::fs::read_dir(&vis_dir)
+        .expect("vis dir must exist")
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
+        .count();
+    assert_eq!(
+        png_count, page_count,
+        "visualize-segments should produce one PNG per page"
+    );
+}
+
+/// Dry-run visualize-segments: must succeed without writing any PNGs.
+#[test]
+fn cli_visualize_segments_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("seg-vis-dry-run");
+    let pdf = tier1("simple.pdf");
+    let transcript_json = tmp.join("transcript.json");
+    let segment_json = tmp.join("segment-index.json");
+    let vis_dir = tmp.join("vis");
+
+    run_extract(&pdf, &transcript_json);
+    run_segment(&transcript_json, &segment_json);
+
+    let output = Command::new(&exe)
+        .arg("visualize-segments")
+        .arg("--input")
+        .arg(&segment_json)
+        .arg("--output")
+        .arg(&vis_dir)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli visualize-segments");
+
+    assert!(
+        output.status.success(),
+        "visualize-segments dry-run exited non-zero"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("vis-seg dry-run stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "succeeded");
+    assert!(
+        !vis_dir.exists(),
+        "visualize-segments dry-run must not create output directory"
+    );
+}

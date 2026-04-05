@@ -21,11 +21,13 @@
 //! ```
 
 pub mod layout;
+pub mod segment;
 pub mod types;
 pub mod validation;
 
 // Re-export main types for convenience
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
+pub use segment::{ChromeMetadata, CoverageStats, SegmentIndex, SectionEntry};
 pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};
 pub use validation::{
     normalize_bbox, sort_spans, validate_transcript, NormalizationError, ValidationError, Validator,

@@ -886,7 +886,7 @@ Phase 0.5: Pattern Dev Tool (Weeks 2-3) ← COMPLETE
     ↓
 Phase 1: Layout Extraction (Weeks 4-5) ← COMPLETE
     ↓
-Phase 2: Furniture/Sections (Weeks 6-7) ← Uses Pattern Dev Tool
+Phase 2: Furniture/Sections (Weeks 6-7) ← COMPLETE
     ↓
 Phase 3: Paragraph Parsing (Weeks 8-9)
     ↓
@@ -1055,13 +1055,13 @@ cargo run -- visualize transcript.json -o debug/
 **Goal:** Build the index. Map section IDs to page ranges.
 
 **Deliverables:**
-- ☐ FurnitureDetector implementation (uses patterns from Phase 0.5)
-- ☐ Chrome metadata extraction (project ID, dates, section info)
-- ☐ Pattern database integration
-- ☐ Section segmentation algorithm (footer-first oracle)
-- ☐ Page-in-section counter detection and validation
-- ☐ Coverage validation
-- ☐ Debug overlays (furniture regions marked, metadata displayed)
+- ✅ FurnitureDetector implementation (uses patterns from Phase 0.5)
+- ✅ Chrome metadata extraction (project ID, dates, section info)
+- ✅ Pattern database integration
+- ✅ Section segmentation algorithm (footer-first oracle)
+- ✅ Page-in-section counter detection and validation
+- ✅ Coverage validation
+- ✅ Debug overlays (furniture regions marked, metadata displayed)
 
 **Test:**
 ```bash
@@ -1103,12 +1103,12 @@ cargo run -- visualize-segments test.pdf index.json -o debug/
 ```
 
 **Definition of Done:**
-- Index JSON shows all sections correctly segmented
-- Chrome metadata extracted and stored
-- Coverage ≥95% on torture corpus
-- Footer patterns match expected format
-- Page-in-section counters validate boundaries
-- No section boundary conflicts
+- ✅ Index JSON shows all sections correctly segmented
+- ✅ Chrome metadata extracted and stored
+- ✅ Coverage ≥95% on torture corpus
+- ✅ Footer patterns match expected format
+- ✅ Page-in-section counters validate boundaries
+- ✅ No section boundary conflicts
 
 ---
 

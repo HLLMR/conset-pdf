@@ -62,12 +62,24 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Segment an extracted transcript into document sections (not implemented).
+    /// Segment an extracted transcript into document sections.
     Segment {
         #[arg(short, long)]
         input: String,
         #[arg(short, long)]
         output: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Render per-page PNG overlays from a SegmentIndex for section boundary inspection.
+    VisualizeSegments {
+        /// Path to the input SegmentIndex JSON (produced by `segment`).
+        #[arg(short, long)]
+        input: String,
+        /// Output directory for color-coded overlay PNGs.
+        #[arg(short, long)]
+        output: String,
+        /// Validate arguments only; skip all rendering.
         #[arg(long)]
         dry_run: bool,
     },
@@ -124,6 +136,12 @@ fn main() -> Result<()> {
         Commands::Segment { input, output, dry_run } => {
             (WorkflowOperation::Segment, input.clone(), output.clone(), *dry_run)
         }
+        Commands::VisualizeSegments { input, output, dry_run } => (
+            WorkflowOperation::VisualizeSegments,
+            input.clone(),
+            Some(output.clone()),
+            *dry_run,
+        ),
         Commands::Parse { input, output, dry_run } => {
             (WorkflowOperation::Parse, input.clone(), output.clone(), *dry_run)
         }

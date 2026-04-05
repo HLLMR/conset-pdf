@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 2.1.0
-**Date:** April 6, 2026
+**Version:** 2.2.0
+**Date:** April 7, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -44,11 +44,12 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 0.5 Phase L: Final verification complete. Definition-of-done confirmed: both binaries build and clippy-clean; workspace-wide `cargo test` exits 0; `classify-pdf` and `pattern-dev` smoke-tested on representative Tier 1 fixtures; PASS/FAIL sidecars carry all required v0.5.0 fields; schema-only families emit `source=schema-only`; `validate-corpus --dry-run` lists 27 fixtures and writes no files; all contract modules carry `**CONTRACT-ONLY**` markers. **Phase 0.5 is CLOSED.**
 - Phase 1 Band 0: G-001, G-002, G-005, G-007, G-009 all closed. Real PDFium extraction wired in `crates/engine/src/pipeline/extraction.rs` (`SpanData`→`BoundingBox`→`normalize_bbox()`→`BBox`→`Span`); `validate_transcript()` called in `pipeline/parsing.rs`; `Validator::validate()` delegates to `validate_transcript()`; extract handler writes transcript JSON to `--output`; `visualize` subcommand added to `backend-cli` (`crates/engine/src/visualize.rs`, `apps/backend-cli/src/handlers/visualize.rs`); E2E + API tests enabled and passing (9/9).
 - Phase 1 complete: 8/8 CLI integration tests pass across SPEC, DWG, NAR, SUB, and simple fixtures; coordinate system verified (no axis inversion); `source_path` canonicalized to absolute path at extraction time. Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
+- Phase 2 complete: `SegmentIndex` IR types (`crates/ir/src/segment.rs`), CSI footer-oracle segmentation engine (`crates/engine/src/segment.rs`), `Segment` and `VisualizeSegments` operations wired in `backend-cli`; 5/5 Phase 2 integration tests pass (segment simple, segment spec, segment dry-run, visualize-segments round-trip, visualize-segments dry-run). Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 
 ## Next Focus
 
-- **Phase 1 is COMPLETE.**
-- **Phase 2 entry points (Band 1):** G-018/G-019 (title-block table scoring and deterministic corner tie-break), G-011 (autonomous ROI ranking), G-022 (spec heading detector), G-013/G-014 (Intake Triage bundle contract + addenda ordering). Use Phase I sidecar trees in `audit_output/phase-i-smoke/` as the iteration corpus.
+- **Phase 2 is COMPLETE.**
+- **Phase 3 entry points (Band 2):** Paragraph parsing and AST construction. See `docs/MASTER_PLAN.md` Phase 3 deliverables.
 
 ## Evidence-Linked Assertions
 
