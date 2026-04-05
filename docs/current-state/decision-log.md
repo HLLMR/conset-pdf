@@ -1,7 +1,7 @@
 # Decision Log
 
-**Version:** 1.6.0  
-**Date:** March 23, 2026  
+**Version:** 1.7.0  
+**Date:** April 4, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -39,6 +39,7 @@ High-value decisions that shape near-term execution.
 | D-025 | 2026-03-23 | Expose confidence through user-facing policy profiles rather than raw internal thresholds. | Customers need stable operational modes without coupling UI semantics to low-level heuristic details that may evolve. | ../MASTER_PLAN.md, ../ARCHITECTURE.md |
 | D-026 | 2026-03-23 | Add cross-document entity resolution and searchable project knowledge indexing as strategic downstream capabilities. | Linking sheets, sections, tags, firms, and revisions across mediums expands the product from parser to project system of record. | ../MASTER_PLAN.md, ../ARCHITECTURE.md |
 | D-027 | 2026-03-23 | Consolidate the committed feature set into an explicit phased priority stack: Phase 0.5 ships only Band 0 runtime and Band 0.5 contract-shaping; later runtime bands are deferred by design. | The feature surface is now broad enough to sprawl across Phase 0.5 unless runtime-vs-contract boundaries and post-0.5 landing zones are explicitly locked. | ../../phase05Implementation.md, ../current-state/state-summary.md |
+| D-028 | 2026-04-04 | Use `page.text().chars()` (PDFium `FPDFText_LoadPage` / `FPDFText_GetCharBox` pipeline) rather than `page.objects().iter()` for text extraction in `pattern-dev` detection functions. | `page.objects().iter()` yields only top-level page objects; PDF Form XObjects — the standard mechanism for running headers/footers in AEC spec templates — appear as a single opaque node, causing `as_text_object()` to return `None` for all footer text. `page.text().chars()` descends transparently into Form XObjects and returns page-coordinate bounds for every character, enabling footer and header detection on all document types. Validated: 499→5 failures on SPEC_RWB_LHHS_ALL_ORG.pdf (571 pages) after switching API. | ../../tools/pattern_dev.rs, ../current-state/gap-register.md |
 
 ## Decision Rule Reminder
 

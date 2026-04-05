@@ -1,7 +1,7 @@
 # Gap Register
 
-**Version:** 1.6.0
-**Date:** March 23, 2026
+**Version:** 1.7.0
+**Date:** April 4, 2026
 **Owner:** HLLMR LLC
 **Status:** ACTIVE
 **Doc Status Tag:** Implemented
@@ -24,7 +24,7 @@ Gap status:
 | G-001 | engine | `crates/engine/src/extractor.rs` | `Extractor::extract()` | PARTIAL | CRITICAL | `ARCHITECTURE.md` — Compiler pipeline: Lexer stage converts raw PDF input to LayoutTranscript | Open |
 | G-002 | engine | `crates/engine/src/processor.rs` | `Processor::process()` | NOOP | CRITICAL | `ARCHITECTURE.md` — Parser/Optimizer stages normalize, validate, and enrich transcript | Open |
 | G-003 | engine | `crates/engine/src/main.rs` | `fn main()` | STUB | HIGH | `ARCHITECTURE.md` — CLI orchestrates full extraction/processing pipeline | Open |
-| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE.md` — Extraction backend produces structured PageData with bboxes and text runs | Open |
+| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE.md` — Extraction backend produces structured PageData with bboxes and text runs | **Closed** — Phase C implemented real pdfium-render calls; returns `PageData` with `Vec<SpanData>`, `RawBBox`, `width_pts`, `height_pts`. Evidence: `crates/pdf-extraction/src/extractor.rs`, `crates/pdf-extraction/src/types.rs`. Note: G-005 (PDF→IR conversion wiring in shared engine) remains open. |
 | G-005 | pdf-extraction / engine | (boundary) | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE.md` — Pipeline connects pdf-extraction output to IR crate types | Open |
 | G-006 | audit | `crates/audit/src/` | Audit hook integration | MISSING-WIRING | MEDIUM | `ARCHITECTURE.md` — Audit events generated during extraction and processing | Open |
 | G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS.md` — Validation layer enforces all IR invariants at the crate boundary | Open |

@@ -194,8 +194,68 @@ impl PdfExtractor for PdfiumExtractor {
         count
     }
 
-    fn extract_page(&self, _doc: &Document, page_index: usize) -> Result<PageData> {
-        Ok(PageData::new(page_index))
+    fn extract_page(&self, doc: &Document, page_index: usize) -> Result<PageData> {
+        if page_index >= doc.page_count {
+            return Err(crate::error::ExtractionError::page_not_found(page_index));
+        }
+
+        let document = self.pdfium.load_pdf_from_file(&doc.path, None).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!(
+                "Failed to load document for page extraction: {e}"
+            ))
+        })?;
+
+        #[allow(clippy::cast_possible_truncation)]
+        let page_index_u16: u16 = page_index as u16;
+
+        let page = document.pages().get(page_index_u16).map_err(|e| {
+            crate::error::ExtractionError::pdf_error(format!(
+                "Failed to get page {page_index}: {e}"
+            ))
+        })?;
+
+        let width_pts = page.width().value;
+        let height_pts = page.height().value;
+
+        let mut spans: Vec<crate::types::SpanData> = Vec::new();
+
+        for object in page.objects().iter() {
+            if let Some(text_obj) = object.as_text_object() {
+                let text = text_obj.text();
+
+                // Skip empty/whitespace-only text objects — they carry no content.
+                if text.trim().is_empty() {
+                    continue;
+                }
+
+                let font_size = text_obj.scaled_font_size().value;
+                let font_name = text_obj.font().name();
+
+                // bounds() returns PdfQuadPoints in PDF coordinates (bottom-left origin).
+                let bbox = match object.bounds() {
+                    Ok(qp) => crate::types::RawBBox {
+                        x: qp.left().value,
+                        y: qp.bottom().value,
+                        width: (qp.right().value - qp.left().value).abs(),
+                        height: (qp.top().value - qp.bottom().value).abs(),
+                    },
+                    Err(_) => {
+                        // Log and skip objects whose bounds cannot be determined.
+                        debug!(
+                            "Skipping text object on page {page_index}: bounds unavailable"
+                        );
+                        continue;
+                    }
+                };
+
+                spans.push(crate::types::SpanData { text, bbox, font_size, font_name });
+            }
+        }
+
+        let span_count = spans.len();
+        debug!("Extracted {span_count} spans from page {page_index} ({width_pts}x{height_pts}pt)");
+
+        Ok(crate::types::PageData { page_index, width_pts, height_pts, spans })
     }
 
     fn extract_text(&self, doc: &Document, page_index: usize) -> Result<String> {

@@ -134,11 +134,43 @@ These are strategic but should not be allowed to destabilize core runtime layers
 1. Phase A — Lock scope, command surface, and artifact families.
 Define the exact Phase 0.5 command set, artifact directories, sidecar families, contract categories, and priority-band assignment before any restructuring. Output of this step is a single accepted inventory of what Phase 0.5 will implement versus only define.
 
+**Locked command surface (Phase A output):**
+- `pattern-dev inspect <PDF> [--page <N>]` — dump per-page geometry summary: page count, dimensions, span count, text quality score, raster-vs-vector flag.
+- `pattern-dev test-pattern <PDF> --family <FAMILY> --output-dir <DIR> [--dry-run]` — apply one heuristic family to one PDF, print per-page match/no-match with confidence, write overlays and sidecars.
+- `pattern-dev validate-corpus --tier 1 [--tier 2] --output-dir <DIR> [--dry-run]` — batch validation over explicit fixture tiers (never holdout), emits per-fixture artifacts plus aggregate validation manifest.
+
+**Locked heuristic families:**
+- `footer-section-id` — regex-based spec footer section-ID detection (runtime, Phase E)
+- `page-counter` — footer page-in-section counter (`Page N of M`) detection (runtime, Phase E)
+- `header-band` — top-band text/logo presence heuristic (runtime, Phase E)
+- `title-block-anchor` — drawing corner-band candidate generation (schema-complete in Phase G; runtime in Phase 1)
+- `roi-candidate` — autonomous ROI ranking evidence (schema-complete in Phase G; runtime in Phase 1)
+- `spec-heading` — spec heading line-feature diagnostics (schema-complete in Phase G; runtime in Phase 1)
+
+**Locked artifact naming (stable from Phase F forward):**
+- Overlay PNG: `<output-dir>/<pdf-stem>/page-<NNNN>-<family>.png` (zero-padded 4-digit page index)
+- Sidecar JSON: `<output-dir>/<pdf-stem>/page-<NNNN>-<family>.json`
+- Validation manifest: `<output-dir>/validation-manifest.json`
+- Corpus aggregate: `<output-dir>/corpus-report.json`
+
 2. Phase B — Rework the `tools` crate into a stable multi-binary home. Depends on 1.
 Convert the current single-binary package into a shape that hosts both `classify-pdf` and `pattern-dev` without breaking existing usage. Reuse bootstrap conventions from `classify_pdf.rs`, and introduce shared helpers only where they are already clearly stable.
 
+**File targets:**
+- `tools/Cargo.toml` — add `[[bin]] name = "pattern-dev" path = "pattern_dev.rs"`; add deps `image`, `imageproc`, `regex` (dev-tool-only; must not propagate to engine crates).
+- `tools/pattern_dev.rs` — new entry point using clap derive with `inspect`, `test-pattern`, and `validate-corpus` subcommands; same pdfium bootstrap pattern as `classify_pdf.rs`.
+- Shared helpers (if any) go into a `tools/src/` directory and are gated behind `pub(crate)` visibility.
+
+**Build gate:** `cargo build -p classify-pdf` and `cargo build -p pattern-dev` must both succeed, and `cargo test -p classify-pdf` must stay green before this phase closes.
+
+**Status: COMPLETE** — April 4, 2026. Both binaries build; shared `tools/src/` module directory in place; 9/9 unit tests passing; `cargo test -p classify-pdf` unaffected.
+
 3. Phase C — Build the local read-only PDF inspection primitive. Depends on 2.
 Implement page loading, rasterization, geometry sampling, and the smallest useful text-access layer needed for pattern work. Support raw vector-PDF inspection first. Add enough hooks to label raster/low-text pages for future OCR routing, but do not implement production OCR runtime in this phase.
+
+**Implementation note — targeted pdfium-render fix:** The inspection primitive calls `PdfiumExtractor::extract_page()` from `crates/pdf-extraction`. That method currently returns empty `PageData` (G-004 open). Phase C includes implementing real pdfium-render API calls in `crates/pdf-extraction/src/extractor.rs` to return actual bboxes and text runs. This is a bounded fix to unblock the pattern-dev tool as its primary consumer; it does not close G-001/G-002/G-005 and must not widen into engine refactoring. The repair is complete when `pattern-dev inspect` can dump real span counts and page dimensions from a Tier 1 fixture.
+
+**Status: COMPLETE** — April 4, 2026. `PdfiumExtractor::extract_page()` implemented in `crates/pdf-extraction/src/extractor.rs`; returns `PageData` with `Vec<SpanData>`, real bboxes, font name/size, and page dimensions. G-004 closed. **Form XObject note:** AEC spec templates place running headers/footers inside PDF Form XObjects. `page.objects().iter()` is opaque to Form XObjects; see Phase E note and D-028 for the `page.text().chars()` resolution.
 
 4. Phase D — Define deterministic pattern and heuristic model primitives. Depends on 3.
 Add the internal policy model for regex patterns, region targeting, confidence thresholds, deterministic ordering, failure codes, and tie-break rules. This phase now also defines the score inputs needed for:
@@ -148,11 +180,76 @@ Add the internal policy model for regex patterns, region targeting, confidence t
 - spec heading detection,
 - future schedule/table heuristic work.
 
+**Locked data model (Phase D output, in `tools/src/pattern_model.rs`):**
+```rust
+pub struct PatternSpec {
+    pub family: HeuristicFamily,
+    pub regex: Option<Regex>,
+    pub region_band: Option<RegionBand>,  // y_min..y_max in [0.0, 1.0]
+    pub confidence_threshold: f32,
+    pub version: &'static str,
+}
+
+pub enum HeuristicFamily {
+    FooterSectionId,
+    PageCounter,
+    HeaderBand,
+    TitleBlockAnchor,  // schema-complete Phase G; runtime Phase 1
+    RoiCandidate,      // schema-complete Phase G; runtime Phase 1
+    SpecHeading,       // schema-complete Phase G; runtime Phase 1
+}
+
+pub struct MatchEvidence {
+    pub page_index: usize,
+    pub matched_text: Option<String>,
+    pub bbox: Option<NormalizedBBox>,
+    pub confidence: f32,
+    pub failure_reason: Option<FailureCode>,
+    pub branch_reason: Option<String>,
+    pub source: SourceTag,  // Vector | Ocr (Ocr deferred to Phase 1)
+}
+
+pub enum FailureCode {
+    NoMatch,
+    LowConfidence,
+    RegionMiss,
+    AmbiguousTie,
+}
+```
+
+Confidence thresholds (from DEV_STANDARDS): `< 0.80` = hard fail/escalate, `0.80–0.95` = output + warning flag, `≥ 0.95` = proceed normally. These map directly to `FailureCode` selection.
+
+**Status: COMPLETE** — April 4, 2026. `tools/src/pattern_model.rs` locked with all required types; serde serialization; 9/9 unit tests; clippy clean with `-D warnings`.
+
 5. Phase E — Implement the single-PDF developer loop. Depends on 4.
 Wire a command that loads one PDF, applies one pattern or heuristic family, prints matched/unmatched results, and writes stable artifacts to an output directory. The first milestone must support the kinds of work later phases depend on most: footer section IDs, page counters, header bands, title-block anchors, and ROI candidate evidence.
 
+**Status: COMPLETE** — April 4, 2026. `pattern-dev test-pattern` real detection loop implemented in `tools/pattern_dev.rs`. Detection uses `page.text().chars()` (PDFium `FPDFText_LoadPage` pipeline) which descends transparently into PDF Form XObjects — critical for AEC spec templates where running footers live in Form XObjects invisible to `page.objects().iter()` (see D-028). Per-page sidecar JSON written at schema version `0.5.0`. `validate-corpus --dry-run` fixture inventory working. Validated on `SPEC_RWB_LHHS_ALL_ORG.pdf` (571 pages): **PASS=556, WARN=10, FAIL=5**. All 5 failures confirmed genuine blank/raster insert pages (pages 0, 11, 12, 14, 15). Effective pass rate on text-bearing pages: 97.1%.
+
 6. Phase F — Add deterministic overlays, sidecars, and provenance payloads. Depends on 5.
 Render overlay images with fixed naming, scale, palette, sorting, and reason semantics. Emit sidecars that capture page index, matched text, bboxes, confidence, failure reason, branch reason, and source provenance. This is also the step where the review object shape should become concrete enough to feed later provenance-first review UIs.
+
+**Overlay palette (deterministic, not configurable at runtime):**
+- Green bbox = matched, confidence ≥ 0.95
+- Yellow bbox = matched, confidence 0.80–0.95 (flag)
+- Red bbox = failure (NoMatch, LowConfidence, RegionMiss, AmbiguousTie)
+
+**Locked sidecar JSON schema (version `0.5.0`, additive-only evolution from here):**
+```json
+{
+  "schema_version": "0.5.0",
+  "pdf_path": "tests/corpus/tier1/SPEC_RWB_LHHS_ALL_ORG.pdf",
+  "page_index": 4,
+  "family": "footer-section-id",
+  "matched_spans": [{"text": "23 82 16", "bbox": {"x": 0.05, "y": 0.94, "width": 0.15, "height": 0.02}}],
+  "confidence": 0.97,
+  "failure_reason": null,
+  "branch_reason": "pattern matched footer band at y=0.94",
+  "source": "vector",
+  "engine_version": "0.1.0",
+  "pattern_version": "0.5.0"
+}
+```
 
 7. Phase G — Add vector-first detection scaffolding artifacts. Depends on 6.
 Extend the tool outputs so they can exercise and document the future runtime heuristics:
@@ -195,6 +292,28 @@ This must state clearly which surfaces are runtime-ready versus contract-only, a
 
 12. Phase L — Final verification and closeout. Depends on 11.
 Run focused checks and tests for the `tools` crate, verify `classify-pdf` still works, smoke-test representative fixtures, and confirm the Phase 0.5 definition of done: local inspection works, deterministic artifacts exist, validation is repeatable, and downstream contracts are clear enough that later phases can implement against them without reopening Phase 0.5 design questions.
+
+## Phase Dependency Graph
+
+```
+B (tools multi-binary restructure)
+└── C (PDF inspection primitive — targeted extract_page fix)
+    └── D (pattern/heuristic model, data types, failure codes)
+        ├── E (single-PDF test-pattern loop — footer-section-id, page-counter, header-band)
+        │   └── F (overlays + per-page sidecars + provenance payloads)
+        │       ├── G (vector-first scaffolding: title-block, roi-candidate, spec-heading schemas)
+        │       │   └── I (corpus validate-corpus command + determinism reporting)
+        │       │       └── J (tests, dry-run semantics, debug logging)
+        │       │           └── K (downstream handoff docs)
+        │       │               └── L (final verification + closeout)
+        │       └── H (contract drafts — can overlap with G once F sidecars are stable)
+        │           └── I
+        └── H (can begin design work once D data model is locked)
+```
+
+Critical path: **B → C → D → E → F → G → I → J → K → L**
+
+H (contract drafts) can begin in parallel with E–G once the Phase D data model is locked. H must complete before I because the validation manifest schema must be compatible with the downstream contract shapes.
 
 ## Agent Handoff Sequence
 
@@ -241,6 +360,11 @@ Run focused checks and tests for the `tools` crate, verify `classify-pdf` still 
 - Priority policy: Phase 0.5 ships Priority Band 0 runtime and Priority Band 0.5 contract-shaping only; all later-band runtime work is explicitly deferred.
 - Manual ROI/profile handling policy: admin-only refinement and controlled fallback; autonomous deterministic detection remains the default operating mode.
 - Standards normalization policy: consume the existing canonical UDS/NCS/MasterFormat scaffold; do not create parallel mappings in this phase.
+- Locked command surfaces: `inspect`, `test-pattern`, `validate-corpus` subcommand signatures are stable from Phase B and must not be renamed or restructured in later phases without an explicit breaking-change decision.
+- Phase C pdfium exception: `PdfiumExtractor::extract_page()` in `crates/pdf-extraction` will be implemented as a targeted fix bounded to what `pattern-dev inspect` needs; G-001, G-002, and G-005 (engine integration chain) remain explicitly out of scope and stay open in the gap register.
+- Additional `tools/` dependencies: `image`, `imageproc`, `regex` are dev-tool-only and must not be added as workspace-level dependencies or propagate into engine crates.
+- Sidecar schema version `0.5.0` is locked from Phase F; field additions are allowed (additive), field renames and removals are breaking changes requiring a version bump and migration note.
+- Heuristic families `title-block-anchor`, `roi-candidate`, and `spec-heading` emit schema-complete sidecars in Phase G but have no runtime detection logic until Phase 1; any Phase G sidecar for these families must set `"source": "schema-only"` to signal contract-only status.
 
 ## Further Considerations
 

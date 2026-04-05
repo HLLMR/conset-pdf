@@ -31,4 +31,4 @@ pub mod types;
 
 pub use error::{ExtractionError, Result};
 pub use extractor::{PdfExtractor, PdfiumExtractor};
-pub use types::{Document, PageData};
+pub use types::{Document, PageData, RawBBox, SpanData};

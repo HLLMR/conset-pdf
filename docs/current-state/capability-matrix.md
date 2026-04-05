@@ -1,7 +1,7 @@
 # Capability Matrix
 
-**Version:** 1.4.0  
-**Date:** March 23, 2026  
+**Version:** 1.5.0  
+**Date:** April 4, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -20,7 +20,7 @@ Classification rule:
 | Area | Implemented | Planned | Evidence | Open Gaps |
 |---|---|---|---|---|
 | `crates/ir` data model and validation | **Partial** — types, BBox, Span, Page, LayoutTranscript, normalize_bbox, sort_spans implemented and tested; `Validator::validate()` is a no-op; `Document` and `Element` are empty stubs | Full invariant enforcement; complete Document/Element types | ../crates/ir/src/, ../crates/ir/tests/ (8 test files, comprehensive) | G-007 (Validator no-op), G-008 (Document/Element stubs) |
-| `crates/pdf-extraction` extraction baseline | **Partial** — PdfExtractor trait, load_document, get_page_count, extract_text (real API calls) implemented and tested; `extract_page()` returns empty PageData | Structured bbox/text-run extraction; IR type conversion | ../crates/pdf-extraction/src/, ../crates/pdf-extraction/tests/ | G-004 (extract_page stub), G-005 (no PDF→IR conversion) |
+| `crates/pdf-extraction` extraction baseline | **Implemented** — `PdfiumExtractor::extract_page()` returns real `PageData` with `Vec<SpanData>` (text, font name, font size, `RawBBox`), `width_pts`, `height_pts`; `load_document`, `get_page_count`, `extract_text` all implemented and tested | PDF→IR span conversion wiring; Form XObject-transparent extraction in shared engine path | `crates/pdf-extraction/src/extractor.rs`, `crates/pdf-extraction/src/types.rs` | G-005 (PDF→IR conversion wiring in shared engine) |
 | `crates/engine` processing baseline | **Stub** — Extractor creates dummy single-page transcript; Processor is identity function; main.rs prints version only | Real extraction pipeline; CLI orchestration; medium-specific processing | ../crates/engine/src/, ../crates/engine/tests/ | G-001, G-002, G-003, G-009 |
 | `crates/audit` bundle/event writer baseline | **Mostly implemented** — AuditEvent, AuditBundle, event types, JSON writer/reader all present; no integration hooks in pipeline | Event hooks in extractor/processor; stronger event ordering/persistence tests | ../crates/audit/src/ | G-006 (no pipeline hooks), G-010 (trivial tests) |
 
@@ -57,6 +57,7 @@ Classification rule:
 | Standards normalization wiring | **Not implemented** — existing canonical standards scaffold is documented but not yet wired into normalization runtime paths | Implement G-037 using existing UDS/NCS/MasterFormat references and raw-to-canonical mapping evidence | ../MASTER_PLAN.md, ../ARCHITECTURE.md, ../AEC_STANDARDS.md | G-037 |
 | Cross-document entity resolution | **Not implemented** — no linked entity layer exists across sheets, sections, tags, firms, and revisions | Implement G-038 entity linking, evidence basis, and confidence model | ../MASTER_PLAN.md, ../ARCHITECTURE.md | G-038 |
 | Project knowledge index and triage queue | **Not implemented** — no searchable knowledge surface, exception queue, or drift dashboard contract exists | Implement G-039 searchable index/triage contracts and metrics surface | ../MASTER_PLAN.md, ../ARCHITECTURE.md | G-039 |
+| `tools` pattern-dev developer CLI | **Partial** — `pattern-dev inspect`, `test-pattern`, `validate-corpus` subcommands implemented; `footer-section-id` detection live (556/571 PASS on 571-page corpus fixture); per-page sidecar JSON at schema `0.5.0`; `page-counter` and `header-band` detection wired; `title-block-anchor`, `roi-candidate`, `spec-heading` emit schema-only sidecars; overlay PNGs not yet rendered | Phase F overlay PNGs; Phase G schema-only sidecar completion; Phase I real validate-corpus loop | `tools/pattern_dev.rs`, `tools/src/pattern_model.rs` | Phase F, G, I not yet started |
 | Documentation governance | **Implemented** — authority order, tags, triage matrix all active | Phase E/F gap closure; Phase D-ext continuation | ../DOC_GOVERNANCE.md | None |
 
 ## Notes
