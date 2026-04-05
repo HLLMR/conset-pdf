@@ -1,8 +1,8 @@
 # Conset PDF Documentation Index
 
 **Repository**: conset-pdf  
-**Version**: 2.0.0  
-**Last Updated**: March 24, 2026  
+**Version**: 2.1.0  
+**Last Updated**: April 5, 2026  
 **Status**: Active canonical index  
 **Doc Status Tag:** Implemented
 
@@ -47,6 +47,10 @@ Execution planning:
 
 - `docs/dev/PHASE_0_IMPLEMENTATION_PLAN_v4_2_1.md`
 
+Downstream handoff:
+
+- `docs/PHASE_05_HANDOFF.md` — Phase 0.5 handoff: runtime-ready surfaces, locked sidecar schema, contract boundaries, and priority band assignments for Band 1–4 implementors. **Appendix A** contains the full Phase 0.5 implementation history (phase sequence, locked command surface, Form XObject discovery, test inventory, corpus results, and locked policy decisions).
+
 Current-state library:
 
 - `docs/current-state/state-summary.md`
@@ -86,6 +90,10 @@ Start with [REPO_STRUCTURE.md](./REPO_STRUCTURE.md).
 ### For Phase D Integration Outcomes
 
 Start with [ARCHITECTURE.md](./ARCHITECTURE.md) under "Phase D Monorepo Integration Outcomes (M-001 to M-003)".
+
+### For Phase 0.5 Downstream Handoff
+
+Start with [PHASE_05_HANDOFF.md](./PHASE_05_HANDOFF.md). Covers: `pattern-dev` workflow, overlay/sidecar schema v0.5.0, evidence payloads for title-block/ROI/spec-heading, all six downstream contract boundaries, runtime-ready vs. contract-only surface map, and priority band assignments for gaps G-001–G-039.
 
 ### For Standards Data Implementation
 

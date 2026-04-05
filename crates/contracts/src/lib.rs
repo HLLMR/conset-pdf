@@ -2,6 +2,24 @@
 //!
 //! During 0.x, these contracts are locked to the engine version and shared by
 //! all integration points (CLI, GUI IPC, and internal orchestration layers).
+//!
+//! ## Phase 0.5-H modules
+//!
+//! | Module | Domain |
+//! |--------|--------|
+//! | [`intake`] | Intake triage, addenda ordering, advisory classification |
+//! | [`ocr_routing`] | Per-page OCR routing manifest |
+//! | [`schedule`] | Canonical schedule schema and export mappings |
+//! | [`assisted_intelligence`] | Micro-ML, LLM validation/instruction contracts |
+//! | [`operational_trust`] | Corrections, instruction DSL, diffs, review, job-state |
+//! | [`knowledge`] | Normalization, entity, and index records |
+
+pub mod assisted_intelligence;
+pub mod intake;
+pub mod knowledge;
+pub mod ocr_routing;
+pub mod operational_trust;
+pub mod schedule;
 
 use serde::{Deserialize, Serialize};
 

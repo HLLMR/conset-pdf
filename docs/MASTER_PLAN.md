@@ -938,29 +938,41 @@ Phase 11+: GUI & Polish (Weeks 21+) ← V1.0
 - Building it early prevents rework later
 
 **Deliverables:**
-- ☐ CLI tool for pattern development
-- ☐ Visual overlay system (show matched regions on PDF pages)
-- ☐ Pattern testing framework (regex → PDF → visual confirmation)
-- ☐ Pattern validation suite (test patterns against sample PDFs)
-- ☐ Debug output (show confidence scores, matched text, bboxes)
+- ✅ CLI tool for pattern development
+- ✅ Visual overlay system (show matched regions on PDF pages)
+- ✅ Pattern testing framework (regex → PDF → visual confirmation)
+- ✅ Pattern validation suite (test patterns against sample PDFs)
+- ✅ Debug output (show confidence scores, matched text, bboxes)
+
+**Status: COMPLETE — April 5, 2026.** All deliverables shipped. See `docs/PHASE_05_HANDOFF.md` for the downstream handoff and Appendix A for implementation history.
 
 **Core Features:**
 
 ```bash
-# Test a footer pattern against a PDF
-cargo run --bin pattern-dev -- test-pattern \
-  --pdf test.pdf \
-  --pattern-type footer_section_id \
-  --regex "^(\d{2}\s\d{2}\s\d{2})\s+–" \
-  --output-overlays debug/
+# Inspect a PDF (page geometry, span counts, text quality)
+cargo run --bin pattern-dev -- inspect test.pdf
 
-# Output:
-# ✓ Page 0: Matched "23 82 16 – " (confidence: 0.98)
-# ✓ Page 1: Matched "23 82 16 – " (confidence: 0.98)
-# ✗ Page 2: No match (confidence: 0.0)
+# Test a heuristic family against a single PDF
+cargo run --bin pattern-dev -- test-pattern \
+  test.pdf \
+  --family footer-section-id \
+  --output-dir debug/
+
+# Batch validate against corpus tier 1
+cargo run --bin pattern-dev -- validate-corpus \
+  --tier 1 \
+  --output-dir audit_output/run1/
+
+# Output (test-pattern):
+# ✓ Page 0: Matched "23 82 16" (confidence: 0.97)
+# ✓ Page 1: Matched "23 82 16" (confidence: 0.97)
+# ✗ Page 2: No match — failure_reason: NO_MATCH
 #
-# Overlay images saved to debug/page-*.png
+# Overlays: debug/<pdf-stem>/page-0000-footer-section-id.png
+# Sidecars: debug/<pdf-stem>/page-0000-footer-section-id.json
 ```
+
+**Note:** `--family` accepts: `footer-section-id`, `page-counter`, `header-band`, `title-block-anchor`, `roi-candidate`, `spec-heading`. The old `--pattern-type` and `--output-overlays` flags were superseded during Phase A. See `docs/PHASE_05_HANDOFF.md` Section 2.1 for the canonical command reference.
 
 **Pattern Development Workflow:**
 
@@ -1387,11 +1399,12 @@ cargo run -- apply-addendum \
 ## Phase Definitions
 
 ### Phase 0-0.5 (Weeks 1-3): Definition of Done
-**Pattern Dev Tool built and functional.**
-- Can test patterns against PDFs visually
-- Overlay system works
-- Pattern validation suite runs
-- Documentation includes pattern dev guide
+**Pattern Dev Tool built and functional. ✅ ACHIEVED — April 5, 2026.**
+- ✅ Can test patterns against PDFs visually
+- ✅ Overlay system works
+- ✅ Pattern validation suite runs (27 Tier 1 fixtures, 2,892 pages, det_regressions=0)
+- ✅ Documentation includes pattern dev guide (`docs/PHASE_05_HANDOFF.md`)
+- ✅ Contract surfaces defined for Band 1–4 downstream work (`crates/contracts/`)
 
 ### Phase 1 (Weeks 4-5): Definition of Done
 **Clean JSON output + document AST.**
@@ -1980,6 +1993,7 @@ This document is **constitutional**. Changes require explicit approval.
 | **4.2.4** | **2026-03-23** | **Deterministic Adaptive Detection & Template Policy Update.** Key changes: (1) Added vector-first deterministic adaptive detection policy and auto-learned firm-template policy, (2) added optional AI fallback guardrails (explicit opt-in, cropped region scope), (3) extended drawings/spec processing sections with deterministic title-block and heading extraction steps, (4) aligned governance language with explainable template-assisted workflows. |
 | **4.2.5** | **2026-03-23** | **Assisted Intelligence, OCR, and Schedule Data Policy Update.** Key changes: (1) Added local micro-ML assist policy (on-device, deterministic-bounded, version-locked), (2) added power-user LLM validation/instruction API policy (explicit opt-in, advisory-by-default, auditable), (3) added first-class raster OCR policy with confidence/provenance requirements, (4) upgraded schedule extraction exports to schema-versioned JSON/CSV/XML contracts. |
 | **4.2.6** | **2026-03-23** | **Operational Trust, Automation, and Knowledge Layer Policy Update.** Key changes: (1) Added replayable correction manifests, provenance-first review, privacy/redaction, batch orchestration, and instruction DSL policies, (2) promoted native diff/exception triage workflows, (3) anchored standards normalization to existing canonical UDS/NCS/MasterFormat scaffold, (4) added cross-document entity resolution and project knowledge indexing as strategic capabilities. |
+| **4.2.7** | **2026-04-05** | **Phase 0.5 Completion.** Marked Phase 0.5 deliverables complete (✅). Corrected command examples to match locked implementation (`--family`, `--output-dir`). Updated Phase 0-0.5 Definition of Done with actual results (27 fixtures, 2892 pages validated, det_regressions=0, `crates/contracts/` complete). See `docs/PHASE_05_HANDOFF.md` for full downstream handoff and Appendix A for implementation history. |
 
 ---
 

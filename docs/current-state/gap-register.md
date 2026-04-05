@@ -1,7 +1,7 @@
 # Gap Register
 
-**Version:** 1.7.0
-**Date:** April 4, 2026
+**Version:** 1.8.0
+**Date:** April 5, 2026
 **Owner:** HLLMR LLC
 **Status:** ACTIVE
 **Doc Status Tag:** Implemented
@@ -38,8 +38,8 @@ Gap status:
 | G-015 | engine / workflows | (furniture patterns boundary) | Autonomous document-type classification from furniture patterns: page-range → medium assignment manifest, advisory output only | MISSING-WIRING | HIGH | `MASTER_PLAN.md` Non-Negotiables #18 + #22 — explicit-invoke classification produces advisory manifest before any destructive split; Phase 2-gated | Open |
 | G-016 | engine / workflows | (intake boundary) | Page rotation detection and normalization: PDFium read of page-dict metadata, `lopdf` write for `/Rotate` correction, per-page normalization manifest | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` Non-Negotiable #23 — `lopdf` is canonical PDF write backend for page-level ops including rotation normalization | Open |
 | G-017 | workflows | `crates/workflows/src/merge_addenda.rs` | Cross-medium addenda merge workflow (single addendum package revises both drawing sheets and spec sections) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` — integrated manuals and combined addenda may contain mixed mediums; Phase 6–7 gated | Open |
-| G-018 | engine / workflows | (drawing detection boundary) | Deterministic drawing-frame and corner-band detector for title-block candidate generation (vector geometry pass) | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — vector-first deterministic title-block localization is baseline | Open |
-| G-019 | engine / workflows | (drawing detection boundary) | Title-block table-structure scoring (axis-aligned lines/intersections/rectangles) and deterministic tie-break | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — title-block ROI chosen by deterministic geometry score with diagnostics | Open |
+| G-018 | engine / workflows | (drawing detection boundary) | Deterministic drawing-frame and corner-band detector for title-block candidate generation (vector geometry pass). **Phase 0.5 note:** `detect_title_block_anchor()` in `tools/pattern_dev.rs` implements keyword-label density corner scoring (Phase G bonus); `TitleBlockSidecar` schema pre-seeds 4 corner candidates (BR/BL/TR/TL). Full shared-engine frame/corner detector remains Open for Band 1. | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — vector-first deterministic title-block localization is baseline | Open |
+| G-019 | engine / workflows | (drawing detection boundary) | Title-block table-structure scoring (axis-aligned lines/intersections/rectangles) and deterministic tie-break. **Phase 0.5 note:** `CornerBandCandidate` fields `axis_line_count`, `cell_density`, `score` defined in `tools/src/pattern_model.rs`; runtime population of these fields deferred to Band 1. | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — title-block ROI chosen by deterministic geometry score with diagnostics | Open |
 | G-020 | engine / workflows | (field extraction boundary) | Deterministic sheet number/title extraction inside title-block ROI using pattern + typography + relative-position scoring | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — sheet fields must be extracted from ROI with auditable scoring evidence | Open |
 | G-021 | contracts + workflows | (template boundary) | Auto-learned firm/layout template store and schema (`status`, `signature`, relative field bboxes, drift metadata) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` Non-Negotiable #25 — templates are auto-learned internal accelerators | Open |
 | G-022 | engine | (spec parsing boundary) | Deterministic vector-text spec heading detector (line clustering, font/caps/indent/spacing heuristics) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` + `ARCHITECTURE.md` — vector-first deterministic spec heading segmentation | Open |
@@ -234,3 +234,5 @@ The gaps below can only move to `Closed` when all listed acceptance criteria are
 | 1.4.0 | 2026-03-23 | Added G-024–G-029 for local micro-ML confidence assist, power-user LLM validation API, raster OCR path, schedule parser canonical schema, and JSON/CSV/XML export adapters. |
 | 1.5.0 | 2026-03-23 | Added G-030–G-039 for replayable corrections, native diff/compare, provenance-first review, privacy/redaction, batch orchestration, instruction DSL, confidence policy profiles, standards normalization wiring, cross-document entity resolution, and project knowledge indexing/triage. |
 | 1.6.0 | 2026-03-23 | Added explicit acceptance criteria for G-030 through G-039 to define closure evidence and prevent ambiguous completion claims. |
+| 1.7.0 | 2026-04-04 | Closed G-004 (`PdfiumExtractor::extract_page()` implemented with real `PageData`). Phase 0.5 Phase C complete. |
+| 1.8.0 | 2026-04-05 | Added Phase 0.5 implementation notes to G-018 and G-019 (partial runtime detector in `tools/pattern_dev.rs::detect_title_block_anchor()`; `TitleBlockSidecar` / `CornerBandCandidate` schemas in place). Both gaps remain Open for shared-engine Band 1 implementation. |

@@ -523,6 +523,333 @@ impl PatternSpec {
     }
 }
 
+// ── Phase G: title-block-anchor schema ───────────────────────────────────────
+
+/// Which corner of the page a title-block candidate occupies.
+///
+/// AEC drawings most commonly place the title block in the bottom-right corner,
+/// but all four positions are supported for schema completeness.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CornerPosition {
+    BottomRight,
+    BottomLeft,
+    TopRight,
+    TopLeft,
+}
+
+/// A corner-band candidate for title-block localization.
+///
+/// In Phase G, `axis_line_count`, `cell_density`, and `score` are always
+/// `None` (runtime detection deferred to Phase 1). The `bbox` is pre-seeded
+/// with the standard corner region so sidecars have concrete geometry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CornerBandCandidate {
+    /// Which corner this candidate covers.
+    pub corner: CornerPosition,
+    /// Normalized bbox of this corner band region.
+    pub bbox: NormalizedBBox,
+    /// Axis-aligned line count inside this band (`None` = not computed).
+    pub axis_line_count: Option<u32>,
+    /// Rectangular cell density inside this band (`None` = not computed).
+    pub cell_density: Option<f32>,
+    /// Composite score for this candidate (`None` = not computed).
+    pub score: Option<f32>,
+}
+
+/// The winning title-block candidate after scoring.
+///
+/// `None` in Phase G schema-only sidecars; populated by Phase 1 runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectedTitleBlock {
+    /// Winning corner.
+    pub corner: CornerPosition,
+    /// Bbox of the selected title block.
+    pub bbox: NormalizedBBox,
+    /// Score of the winning candidate.
+    pub score: f32,
+}
+
+/// A candidate field (labelled cell) within the title-block region.
+///
+/// Fields represent labelled cells such as "SHEET NUMBER", "PROJECT",
+/// "DRAWN BY", etc. All fields are `None` in Phase G schema-only sidecars.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleBlockField {
+    /// Expected label text (`None` = not identified).
+    pub label: Option<String>,
+    /// Bbox of the label area (`None` = not located).
+    pub label_bbox: Option<NormalizedBBox>,
+    /// Bbox of the value area (`None` = not located).
+    pub value_bbox: Option<NormalizedBBox>,
+    /// Extracted value text (`None` = not extracted).
+    pub extracted_value: Option<String>,
+    /// Score for this field match (`None` = not computed).
+    pub field_score: Option<f32>,
+}
+
+/// Auto-learned template lifecycle metadata.
+///
+/// Supports drift detection when the same document template produces
+/// different layout versions over time. All fields are `None` in Phase G.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateLifecycle {
+    /// Stable internal ID of the detected template, if known.
+    pub detected_template_id: Option<String>,
+    /// Version string of this template definition.
+    pub template_version: Option<String>,
+    /// `true` when the detected layout drifts from the last-seen template.
+    pub drift_flag: Option<bool>,
+    /// Content hash of the last-seen template for drift comparison.
+    pub last_seen_hash: Option<String>,
+}
+
+impl TemplateLifecycle {
+    /// Returns a schema-only placeholder with all fields set to `None`.
+    #[must_use]
+    pub fn schema_placeholder() -> Self {
+        Self {
+            detected_template_id: None,
+            template_version: None,
+            drift_flag: None,
+            last_seen_hash: None,
+        }
+    }
+}
+
+/// Title-block extension fields emitted by the `title-block-anchor` family.
+///
+/// Embedded in [`TitleBlockSidecar`]. Schema-complete in Phase G;
+/// populated by Phase 1 vector-first drawing detection runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TitleBlockExtension {
+    /// Four corner-band candidates, pre-seeded with standard regions.
+    pub corner_candidates: Vec<CornerBandCandidate>,
+    /// Winning candidate after scoring (`None` in Phase G schema-only mode).
+    pub winning_candidate: Option<SelectedTitleBlock>,
+    /// Field candidates within the title block (empty in Phase G).
+    pub field_candidates: Vec<TitleBlockField>,
+    /// Auto-learned template lifecycle metadata.
+    pub template_lifecycle: TemplateLifecycle,
+}
+
+impl TitleBlockExtension {
+    /// Standard corner-band bboxes used as schema placeholders.
+    ///
+    /// Each candidate covers roughly 38 % of page width × 22 % of page height.
+    /// Detection scores are all `None` — set by Phase 1 runtime.
+    #[must_use]
+    pub fn schema_placeholder() -> Self {
+        let candidates = vec![
+            CornerBandCandidate {
+                corner: CornerPosition::BottomRight,
+                bbox: NormalizedBBox { x: 0.62, y: 0.78, width: 0.38, height: 0.22 },
+                axis_line_count: None,
+                cell_density: None,
+                score: None,
+            },
+            CornerBandCandidate {
+                corner: CornerPosition::BottomLeft,
+                bbox: NormalizedBBox { x: 0.0, y: 0.78, width: 0.38, height: 0.22 },
+                axis_line_count: None,
+                cell_density: None,
+                score: None,
+            },
+            CornerBandCandidate {
+                corner: CornerPosition::TopRight,
+                bbox: NormalizedBBox { x: 0.62, y: 0.0, width: 0.38, height: 0.22 },
+                axis_line_count: None,
+                cell_density: None,
+                score: None,
+            },
+            CornerBandCandidate {
+                corner: CornerPosition::TopLeft,
+                bbox: NormalizedBBox { x: 0.0, y: 0.0, width: 0.38, height: 0.22 },
+                axis_line_count: None,
+                cell_density: None,
+                score: None,
+            },
+        ];
+        Self {
+            corner_candidates: candidates,
+            winning_candidate: None,
+            field_candidates: Vec::new(),
+            template_lifecycle: TemplateLifecycle::schema_placeholder(),
+        }
+    }
+}
+
+/// Full sidecar type for `title-block-anchor` (schema-only, Phase G).
+///
+/// The `base` fields are flattened into the top-level JSON object, followed
+/// by `title_block` as a nested object — matching the locked sidecar schema.
+#[derive(Debug, Clone, Serialize)]
+pub struct TitleBlockSidecar {
+    /// Base [`MatchEvidence`] fields (flattened into top-level JSON).
+    #[serde(flatten)]
+    pub base: MatchEvidence,
+    /// Title-block specific extension.
+    pub title_block: TitleBlockExtension,
+}
+
+// ── Phase G: roi-candidate schema ─────────────────────────────────────────────
+
+/// A candidate ROI region with ranking evidence.
+///
+/// `text_density`, `geometric_regularity`, `footer_proximity`, and
+/// `rank_score` are all `None` in Phase G schema-only sidecars.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoiCandidateRecord {
+    /// Sequential index (0-based, deterministic order).
+    pub candidate_id: u32,
+    /// Candidate region bbox (pre-seeded with standard zones in Phase G).
+    pub bbox: Option<NormalizedBBox>,
+    /// Normalized text density in this region (`None` = not computed).
+    pub text_density: Option<f32>,
+    /// Geometric regularity score (`None` = not computed).
+    pub geometric_regularity: Option<f32>,
+    /// Proximity to the page footer band (`None` = not computed).
+    pub footer_proximity: Option<f32>,
+    /// Composite ranking score (`None` = not computed).
+    pub rank_score: Option<f32>,
+}
+
+/// The selected ROI after ranking.
+///
+/// `None` in Phase G schema-only sidecars; populated by Phase 1 runtime (G-011).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectedRoi {
+    /// Index of the winning candidate.
+    pub candidate_id: u32,
+    /// Bbox of the selected ROI.
+    pub bbox: NormalizedBBox,
+    /// Final rank score.
+    pub rank_score: f32,
+}
+
+/// ROI evidence extension emitted by the `roi-candidate` family.
+///
+/// Embedded in [`RoiCandidateSidecar`]. Schema-complete in Phase G;
+/// populated by Phase 1 autonomous ROI ranking runtime (G-011).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoiEvidence {
+    /// Ranked candidate regions (pre-seeded with 3 standard zones in Phase G).
+    pub candidates: Vec<RoiCandidateRecord>,
+    /// Selected ROI after ranking (`None` in Phase G schema-only mode).
+    pub selected_roi: Option<SelectedRoi>,
+    /// Version of the ranking policy applied.
+    pub ranking_policy_version: String,
+}
+
+impl RoiEvidence {
+    /// Three pre-seeded candidate zones (footer, body, header) with null scores.
+    #[must_use]
+    pub fn schema_placeholder() -> Self {
+        let candidates = vec![
+            RoiCandidateRecord {
+                candidate_id: 0,
+                bbox: Some(NormalizedBBox { x: 0.0, y: 0.85, width: 1.0, height: 0.15 }),
+                text_density: None,
+                geometric_regularity: None,
+                footer_proximity: None,
+                rank_score: None,
+            },
+            RoiCandidateRecord {
+                candidate_id: 1,
+                bbox: Some(NormalizedBBox { x: 0.0, y: 0.15, width: 1.0, height: 0.70 }),
+                text_density: None,
+                geometric_regularity: None,
+                footer_proximity: None,
+                rank_score: None,
+            },
+            RoiCandidateRecord {
+                candidate_id: 2,
+                bbox: Some(NormalizedBBox { x: 0.0, y: 0.0, width: 1.0, height: 0.15 }),
+                text_density: None,
+                geometric_regularity: None,
+                footer_proximity: None,
+                rank_score: None,
+            },
+        ];
+        Self {
+            candidates,
+            selected_roi: None,
+            ranking_policy_version: MatchEvidence::PATTERN_VERSION.to_owned(),
+        }
+    }
+}
+
+/// Full sidecar type for `roi-candidate` (schema-only, Phase G).
+#[derive(Debug, Clone, Serialize)]
+pub struct RoiCandidateSidecar {
+    /// Base [`MatchEvidence`] fields (flattened into top-level JSON).
+    #[serde(flatten)]
+    pub base: MatchEvidence,
+    /// ROI evidence extension.
+    pub roi_evidence: RoiEvidence,
+}
+
+// ── Phase G: spec-heading schema ──────────────────────────────────────────────
+
+/// Line-feature record for a heading candidate span.
+///
+/// All fields are `None` in Phase G schema-only sidecars.
+/// Phase 1 runtime (G-022) populates these from the extracted text layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeadingCandidateRecord {
+    /// Candidate text (`None` = schema placeholder).
+    pub text: Option<String>,
+    /// Normalized bbox (`None` = schema placeholder).
+    pub bbox: Option<NormalizedBBox>,
+    /// Measured font size in PDF points (`None` = not extracted).
+    pub font_size_pts: Option<f32>,
+    /// Font size delta vs. median body font on this page (`None` = not computed).
+    pub font_delta: Option<f32>,
+    /// Fraction of uppercase characters in [0.0, 1.0] (`None` = not computed).
+    pub caps_ratio: Option<f32>,
+    /// Normalized x-indent from left margin (`None` = not computed).
+    pub indent_norm: Option<f32>,
+    /// Vertical gap above this line in PDF points (`None` = not computed).
+    pub leading_gap_pts: Option<f32>,
+    /// Composite heading score [0.0, 1.0] (`None` = not computed).
+    pub heading_score: Option<f32>,
+}
+
+/// Spec heading diagnostics extension emitted by the `spec-heading` family.
+///
+/// Embedded in [`SpecHeadingSidecar`]. Schema-complete in Phase G;
+/// populated by Phase 1 spec heading detection runtime (G-022).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpecHeadingDiagnostics {
+    /// Heading candidates in top-to-bottom page order.
+    ///
+    /// Empty in Phase G (schema-only); Phase 1 fills this from the text layer.
+    pub candidates: Vec<HeadingCandidateRecord>,
+    /// Version of the heading detection policy applied.
+    pub detection_policy_version: String,
+}
+
+impl SpecHeadingDiagnostics {
+    /// Empty candidates list with the locked policy version.
+    #[must_use]
+    pub fn schema_placeholder() -> Self {
+        Self {
+            candidates: Vec::new(),
+            detection_policy_version: MatchEvidence::PATTERN_VERSION.to_owned(),
+        }
+    }
+}
+
+/// Full sidecar type for `spec-heading` (schema-only, Phase G).
+#[derive(Debug, Clone, Serialize)]
+pub struct SpecHeadingSidecar {
+    /// Base [`MatchEvidence`] fields (flattened into top-level JSON).
+    #[serde(flatten)]
+    pub base: MatchEvidence,
+    /// Spec heading diagnostics extension.
+    pub heading_diagnostics: SpecHeadingDiagnostics,
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -626,5 +953,122 @@ mod tests {
         assert!(re.is_match("PAGE 14 OF 32"));
         assert!(re.is_match("page 1 of 1"));
         assert!(!re.is_match("23 82 16 section"));
+    }
+
+    // ── Phase G schema tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn title_block_extension_has_four_corner_candidates() {
+        let ext = TitleBlockExtension::schema_placeholder();
+        assert_eq!(ext.corner_candidates.len(), 4);
+        // Deterministic order: BR, BL, TR, TL
+        assert_eq!(ext.corner_candidates[0].corner, CornerPosition::BottomRight);
+        assert_eq!(ext.corner_candidates[1].corner, CornerPosition::BottomLeft);
+        assert_eq!(ext.corner_candidates[2].corner, CornerPosition::TopRight);
+        assert_eq!(ext.corner_candidates[3].corner, CornerPosition::TopLeft);
+        // All scores null in schema-only mode
+        for c in &ext.corner_candidates {
+            assert!(c.score.is_none());
+            assert!(c.axis_line_count.is_none());
+            assert!(c.cell_density.is_none());
+        }
+        assert!(ext.winning_candidate.is_none());
+        assert!(ext.field_candidates.is_empty());
+    }
+
+    #[test]
+    fn roi_evidence_has_three_seeded_candidates() {
+        let ev = RoiEvidence::schema_placeholder();
+        assert_eq!(ev.candidates.len(), 3);
+        // Candidate IDs are deterministic
+        assert_eq!(ev.candidates[0].candidate_id, 0);
+        assert_eq!(ev.candidates[1].candidate_id, 1);
+        assert_eq!(ev.candidates[2].candidate_id, 2);
+        // Bboxes pre-seeded, scores null
+        for r in &ev.candidates {
+            assert!(r.bbox.is_some());
+            assert!(r.rank_score.is_none());
+        }
+        assert!(ev.selected_roi.is_none());
+        assert_eq!(ev.ranking_policy_version, MatchEvidence::PATTERN_VERSION);
+    }
+
+    #[test]
+    fn spec_heading_diagnostics_has_empty_candidates() {
+        let diag = SpecHeadingDiagnostics::schema_placeholder();
+        assert!(diag.candidates.is_empty());
+        assert_eq!(diag.detection_policy_version, MatchEvidence::PATTERN_VERSION);
+    }
+
+    #[test]
+    fn title_block_sidecar_serialises_with_base_and_extension_fields() {
+        let base = MatchEvidence::placeholder(
+            "test.pdf".to_owned(),
+            0,
+            &HeuristicFamily::TitleBlockAnchor,
+        );
+        let sidecar = TitleBlockSidecar {
+            base,
+            title_block: TitleBlockExtension::schema_placeholder(),
+        };
+        let json = serde_json::to_string(&sidecar).unwrap();
+        // Base fields must appear at top level (flattened).
+        assert!(json.contains("\"schema_version\""));
+        assert!(json.contains("\"family\""));
+        assert!(json.contains("\"source\""));
+        // Extension must appear as nested object.
+        assert!(json.contains("\"title_block\""));
+        assert!(json.contains("\"corner_candidates\""));
+        assert!(json.contains("\"template_lifecycle\""));
+    }
+
+    #[test]
+    fn roi_candidate_sidecar_serialises_with_base_and_extension_fields() {
+        let base = MatchEvidence::placeholder(
+            "test.pdf".to_owned(),
+            0,
+            &HeuristicFamily::RoiCandidate,
+        );
+        let sidecar = RoiCandidateSidecar {
+            base,
+            roi_evidence: RoiEvidence::schema_placeholder(),
+        };
+        let json = serde_json::to_string(&sidecar).unwrap();
+        assert!(json.contains("\"schema_version\""));
+        assert!(json.contains("\"roi_evidence\""));
+        assert!(json.contains("\"candidates\""));
+        assert!(json.contains("\"ranking_policy_version\""));
+    }
+
+    #[test]
+    fn spec_heading_sidecar_serialises_with_base_and_extension_fields() {
+        let base = MatchEvidence::placeholder(
+            "test.pdf".to_owned(),
+            0,
+            &HeuristicFamily::SpecHeading,
+        );
+        let sidecar = SpecHeadingSidecar {
+            base,
+            heading_diagnostics: SpecHeadingDiagnostics::schema_placeholder(),
+        };
+        let json = serde_json::to_string(&sidecar).unwrap();
+        assert!(json.contains("\"schema_version\""));
+        assert!(json.contains("\"heading_diagnostics\""));
+        assert!(json.contains("\"detection_policy_version\""));
+    }
+
+    #[test]
+    fn corner_position_round_trips_via_serde() {
+        let positions = [
+            CornerPosition::BottomRight,
+            CornerPosition::BottomLeft,
+            CornerPosition::TopRight,
+            CornerPosition::TopLeft,
+        ];
+        for pos in &positions {
+            let json = serde_json::to_string(pos).unwrap();
+            let back: CornerPosition = serde_json::from_str(&json).unwrap();
+            assert_eq!(pos, &back);
+        }
     }
 }

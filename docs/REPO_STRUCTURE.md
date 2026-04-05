@@ -1,7 +1,7 @@
 # Conset PDF Repository Structure
 
-**Version:** 1.0.0  
-**Date:** March 23, 2026  
+**Version:** 1.1.0  
+**Date:** April 5, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -18,6 +18,7 @@ Defines the monorepo layout, dependency boundaries, and test organization for th
 
 - `apps/`: executable surfaces and UI frontends
 - `crates/`: shared libraries and core pipeline crates
+- `tools/`: developer utility binaries (not shipped to end users)
 - `tests/`: repository-level integration and corpus assets
 - `docs/`: canonical plans, architecture, and governance docs
 
@@ -52,6 +53,20 @@ Rules:
 - lower-level crates must not depend on app crates
 - avoid circular dependencies between crates
 
+### tools/
+
+- `tools/classify_pdf.rs`: `classify-pdf` binary — heuristic medium/tier classifier for PDFs
+- `tools/pattern_dev.rs`: `pattern-dev` binary — developer tool for pattern creation and corpus validation
+- `tools/src/pattern_model.rs`: shared model types (pattern specs, sidecar schemas, match evidence)
+
+Rules:
+
+- `tools/` is a **dev-tool-only** Cargo package; its binaries are **not shipped** to end users
+- `tools/` may depend on `crates/pdf-extraction` and workspace crates but not on `apps/`
+- dev-tool-only dependencies (`image`, `imageproc`, `regex`, `pdfium-render`) must remain scoped to `tools/` and **must not** be added as workspace-level deps or propagate to engine crates
+- Locked command surface (`inspect`, `test-pattern`, `validate-corpus`) is stable from Phase 0.5; renaming requires a breaking-change decision in `docs/current-state/decision-log.md`
+- See `docs/PHASE_05_HANDOFF.md` for full developer workflow documentation
+
 ---
 
 ## Contract Boundary
@@ -80,6 +95,8 @@ Rules:
 - `conset-pdf-engine` -> `conset-pdf-ir` (dev: `conset-pdf-extraction`)
 - `conset-pdf-backend-cli` -> `conset-pdf-engine`, `conset-pdf-contracts`, `conset-pdf-audit`
 - `conset-pdf-desktop-gui` -> `conset-pdf-contracts`, `tauri`
+- `tools/classify-pdf` -> `conset-pdf-pdf-extraction` (dev tool, not part of published dep graph)
+- `tools/pattern-dev` -> `conset-pdf-pdf-extraction`, `tools/src` (dev tool, not part of published dep graph)
 
 ---
 
@@ -88,6 +105,7 @@ Rules:
 - `cargo check --workspace`
 - `cargo test --workspace`
 - `cargo build --bin backend-cli`
+- `cargo build --bin classify-pdf`
+- `cargo build --bin pattern-dev`
 - `cargo test -p conset-pdf-desktop-gui`
-
-Use workspace-level dependencies in root `Cargo.toml` wherever possible.
+- `cargo test -p classify-pdf`  (or `-p pattern-dev` for the tools package)

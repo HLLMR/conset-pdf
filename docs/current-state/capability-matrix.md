@@ -1,7 +1,7 @@
 # Capability Matrix
 
-**Version:** 1.5.0  
-**Date:** April 4, 2026  
+**Version:** 1.6.0  
+**Date:** April 5, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -23,6 +23,7 @@ Classification rule:
 | `crates/pdf-extraction` extraction baseline | **Implemented** — `PdfiumExtractor::extract_page()` returns real `PageData` with `Vec<SpanData>` (text, font name, font size, `RawBBox`), `width_pts`, `height_pts`; `load_document`, `get_page_count`, `extract_text` all implemented and tested | PDF→IR span conversion wiring; Form XObject-transparent extraction in shared engine path | `crates/pdf-extraction/src/extractor.rs`, `crates/pdf-extraction/src/types.rs` | G-005 (PDF→IR conversion wiring in shared engine) |
 | `crates/engine` processing baseline | **Stub** — Extractor creates dummy single-page transcript; Processor is identity function; main.rs prints version only | Real extraction pipeline; CLI orchestration; medium-specific processing | ../crates/engine/src/, ../crates/engine/tests/ | G-001, G-002, G-003, G-009 |
 | `crates/audit` bundle/event writer baseline | **Mostly implemented** — AuditEvent, AuditBundle, event types, JSON writer/reader all present; no integration hooks in pipeline | Event hooks in extractor/processor; stronger event ordering/persistence tests | ../crates/audit/src/ | G-006 (no pipeline hooks), G-010 (trivial tests) |
+| `crates/contracts` downstream contract surfaces | **Implemented** — 6 modules: `intake`, `ocr_routing`, `schedule`, `assisted_intelligence`, `operational_trust`, `knowledge`; 24/24 unit tests (round-trip serde for every major type); all types `#[derive(Debug, Clone, Serialize, Deserialize)]`; **CONTRACT-ONLY** by design; no runtime execution wired | Runtime implementation in Band 1–4 (see gap assignments) | `crates/contracts/src/` | Runtime: G-013–G-016 (intake), G-027 (OCR), G-028–G-029 (schedule), G-023–G-026 (AI), G-030–G-036 (trust), G-037–G-039 (knowledge) |
 
 ## Workflow-Level Matrix (Canonical Intent)
 
@@ -57,7 +58,7 @@ Classification rule:
 | Standards normalization wiring | **Not implemented** — existing canonical standards scaffold is documented but not yet wired into normalization runtime paths | Implement G-037 using existing UDS/NCS/MasterFormat references and raw-to-canonical mapping evidence | ../MASTER_PLAN.md, ../ARCHITECTURE.md, ../AEC_STANDARDS.md | G-037 |
 | Cross-document entity resolution | **Not implemented** — no linked entity layer exists across sheets, sections, tags, firms, and revisions | Implement G-038 entity linking, evidence basis, and confidence model | ../MASTER_PLAN.md, ../ARCHITECTURE.md | G-038 |
 | Project knowledge index and triage queue | **Not implemented** — no searchable knowledge surface, exception queue, or drift dashboard contract exists | Implement G-039 searchable index/triage contracts and metrics surface | ../MASTER_PLAN.md, ../ARCHITECTURE.md | G-039 |
-| `tools` pattern-dev developer CLI | **Partial** — `pattern-dev inspect`, `test-pattern`, `validate-corpus` subcommands implemented; `footer-section-id` detection live (556/571 PASS on 571-page corpus fixture); per-page sidecar JSON at schema `0.5.0`; `page-counter` and `header-band` detection wired; `title-block-anchor`, `roi-candidate`, `spec-heading` emit schema-only sidecars; overlay PNGs not yet rendered | Phase F overlay PNGs; Phase G schema-only sidecar completion; Phase I real validate-corpus loop | `tools/pattern_dev.rs`, `tools/src/pattern_model.rs` | Phase F, G, I not yet started |
+| `tools` pattern-dev developer CLI | **Implemented** — all Phase 0.5 phases B–L complete; `inspect`, `test-pattern`, `validate-corpus` subcommands runtime-ready; `footer-section-id`/`page-counter`/`header-band` detection live; `title-block-anchor` partial runtime (corner scoring, Phase G bonus); `roi-candidate`/`spec-heading` schema-only; overlay PNGs at 1400 px; sidecar schema v0.5.0 locked; 32 unit + 5 integration tests passing; corpus validated: 27 Tier 1 fixtures, 2,892 pages, `det_regressions=0` | — | `tools/pattern_dev.rs`, `tools/src/pattern_model.rs`, `tools/tests/pattern_dev_integration.rs` | Band 1: G-011 (ROI ranking runtime), G-018–G-019 (title-block full scoring) |
 | Documentation governance | **Implemented** — authority order, tags, triage matrix all active | Phase E/F gap closure; Phase D-ext continuation | ../DOC_GOVERNANCE.md | None |
 
 ## Notes

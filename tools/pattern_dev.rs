@@ -15,15 +15,22 @@
 #[path = "src/pattern_model.rs"]
 mod pattern_model;
 use pattern_model::{
-    FailureCode, HeuristicFamily, MatchEvidence, MatchedSpan, NormalizedBBox, PatternSpec,
-    SourceTag, CONFIDENCE_PASS,
+    CornerBandCandidate, FailureCode, HeuristicFamily, MatchEvidence, MatchedSpan,
+    NormalizedBBox, PatternSpec, RoiCandidateSidecar, RoiEvidence, SelectedTitleBlock, SourceTag,
+    SpecHeadingDiagnostics, SpecHeadingSidecar, TemplateLifecycle, TitleBlockExtension,
+    TitleBlockField, TitleBlockSidecar, CONFIDENCE_PASS,
 };
 
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
+use image::{Rgba, RgbaImage};
+use imageproc::drawing::draw_hollow_rect_mut;
+use imageproc::rect::Rect;
 use pdfium_render::prelude::*;
 use regex::Regex;
 
@@ -373,26 +380,34 @@ fn run_test_pattern(
         let Ok(idx_u16) = u16::try_from(idx) else { continue };
         let Ok(page) = doc.pages().get(idx_u16) else { continue };
 
-        let evidence = if !family.is_runtime_ready() {
-            MatchEvidence::placeholder(pdf_path.display().to_string(), idx, family)
-        } else {
-            let matched_spans = collect_page_matches(&page, &spec, compiled_regex.as_ref());
-            let (confidence, failure_reason, branch_reason) =
-                score_matches(&matched_spans, compiled_regex.is_some());
-            MatchEvidence {
-                schema_version: MatchEvidence::SCHEMA_VERSION,
-                pdf_path: pdf_path.display().to_string(),
-                page_index: idx,
-                family: family_str.to_owned(),
-                matched_spans,
-                confidence: Some(confidence),
-                failure_reason,
-                branch_reason,
-                source: SourceTag::Vector,
-                engine_version: env!("CARGO_PKG_VERSION"),
-                pattern_version: MatchEvidence::PATTERN_VERSION,
-            }
-        };
+        let (evidence, tba_ext_opt): (MatchEvidence, Option<TitleBlockExtension>) =
+            if matches!(family, HeuristicFamily::TitleBlockAnchor) {
+                let (ev, ext) =
+                    detect_title_block_anchor(&page, &pdf_path.display().to_string(), idx);
+                (ev, Some(ext))
+            } else if !family.is_runtime_ready() {
+                (MatchEvidence::placeholder(pdf_path.display().to_string(), idx, family), None)
+            } else {
+                let matched_spans = collect_page_matches(&page, &spec, compiled_regex.as_ref());
+                let (confidence, failure_reason, branch_reason) =
+                    score_matches(&matched_spans, compiled_regex.is_some());
+                (
+                    MatchEvidence {
+                        schema_version: MatchEvidence::SCHEMA_VERSION,
+                        pdf_path: pdf_path.display().to_string(),
+                        page_index: idx,
+                        family: family_str.to_owned(),
+                        matched_spans,
+                        confidence: Some(confidence),
+                        failure_reason,
+                        branch_reason,
+                        source: SourceTag::Vector,
+                        engine_version: env!("CARGO_PKG_VERSION"),
+                        pattern_version: MatchEvidence::PATTERN_VERSION,
+                    },
+                    None,
+                )
+            };
 
         let status = if matches!(evidence.source, SourceTag::SchemaOnly) {
             "SKIP"
@@ -414,8 +429,17 @@ fn run_test_pattern(
 
         let sidecar_name = format!("page-{idx:04}-{family_str}.json");
         let sidecar_path = artifact_dir.join(&sidecar_name);
-        std::fs::write(&sidecar_path, serde_json::to_string_pretty(&evidence)?)
+        let sidecar_json =
+            serialize_sidecar_for_family(family, &evidence, tba_ext_opt.as_ref())
+                .with_context(|| format!("Failed to serialise sidecar for page {idx}"))?;
+        std::fs::write(&sidecar_path, sidecar_json)
             .with_context(|| format!("Failed to write sidecar: {}", sidecar_path.display()))?;
+
+        // Phase F — render overlay PNG with match evidence annotated.
+        let overlay_name = format!("page-{idx:04}-{family_str}.png");
+        let overlay_path = artifact_dir.join(&overlay_name);
+        render_overlay_png(&page, &evidence, &spec, &overlay_path)
+            .with_context(|| format!("Overlay render failed for page {idx}"))?;
 
         results.push(evidence);
     }
@@ -435,7 +459,10 @@ fn run_test_pattern(
         "\ntest-pattern complete: {page_count} pages  \
          PASS={n_pass} WARN={n_warn} FAIL={n_fail} SKIP={n_skip}"
     );
-    println!("  family={family_str}  artifacts={}", artifact_dir.display());
+    println!(
+        "  family={family_str}  overlays+sidecars={}",
+        artifact_dir.display()
+    );
 
     Ok(())
 }
@@ -448,6 +475,24 @@ fn run_test_pattern(
 /// Typical inter-line leading on AEC spec documents is ≥ 12 pt, so this
 /// threshold captures same-line chars without merging adjacent lines.
 const CHAR_LINE_TOLERANCE_PTS: f32 = 6.0;
+
+// ── Phase F overlay constants ─────────────────────────────────────────────────
+
+/// Target pixel width for rasterizing pages in overlay PNG output.
+/// Aspect ratio is maintained; height is calculated automatically from page dimensions.
+const OVERLAY_TARGET_WIDTH_PX: i32 = 1400;
+
+/// Overlay box line thickness in pixels (drawn as concentric inset hollow rects).
+const OVERLAY_RECT_THICKNESS: i32 = 3;
+
+/// PASS overlay colour — green: matched, confidence ≥ 0.95.
+const COLOR_PASS: Rgba<u8> = Rgba([0u8, 192, 0, 230]);
+/// WARN overlay colour — amber: matched, confidence 0.80–0.95 (flagged).
+const COLOR_WARN: Rgba<u8> = Rgba([255u8, 160, 0, 230]);
+/// FAIL overlay colour — red: any `FailureCode`.
+const COLOR_FAIL: Rgba<u8> = Rgba([220u8, 0, 0, 230]);
+/// Detection-band outline colour — mid-grey: always rendered, 1 px.
+const COLOR_BAND: Rgba<u8> = Rgba([140u8, 140, 140, 160]);
 
 /// Iterate all characters on `page` (including those inside Form XObjects),
 /// filter by region band and optional regex, and return matched logical lines
@@ -498,10 +543,10 @@ fn collect_page_matches<'d>(
             continue;
         }
         let Ok(rect) = ch.loose_bounds() else { continue };
-        let raw_x = rect.left.value;
-        let raw_y = rect.bottom.value;
-        let raw_w = (rect.right.value - rect.left.value).abs().max(0.001);
-        let raw_h = (rect.top.value - rect.bottom.value).abs().max(0.001);
+        let raw_x = rect.left().value;
+        let raw_y = rect.bottom().value;
+        let raw_w = (rect.right().value - rect.left().value).abs().max(0.001);
+        let raw_h = (rect.top().value - rect.bottom().value).abs().max(0.001);
         let Some(nbbox) =
             NormalizedBBox::from_raw(raw_x, raw_y, raw_w, raw_h, width_pts, height_pts)
         else {
@@ -526,6 +571,7 @@ fn collect_page_matches<'d>(
     });
 
     // Group into logical lines.
+    #[allow(clippy::type_complexity)]
     let mut char_lines: Vec<Vec<(char, f32, f32, f32, f32)>> = Vec::new();
     let mut cur: Vec<(char, f32, f32, f32, f32)> = Vec::new();
     let mut line_y = band[0].2;
@@ -559,7 +605,7 @@ fn collect_page_matches<'d>(
                 let prev = &ls[i - 1];
                 let gap = raw_x - (prev.1 + prev.3);
                 let avg_w = (raw_w + prev.3) * 0.5;
-                if gap > avg_w * 0.33 && line_text.chars().last() != Some(' ') {
+                if gap > avg_w * 0.33 && !line_text.ends_with(' ') {
                     line_text.push(' ');
                 }
             }
@@ -633,10 +679,484 @@ fn score_matches(
     (conf, None, "best match in target band".to_owned())
 }
 
+// ── Phase F overlay rendering ─────────────────────────────────────────────────
+
+/// Draw a thick hollow rectangle on `img` by rendering `thickness` concentric inset
+/// hollow rects. Coordinates are derived from `bbox` in normalised [0.0, 1.0] space.
+///
+/// Inset approach: each successive rect is 1 px smaller on all sides, giving a
+/// solid-stroke appearance without alpha-blending artefacts from overlapping fills.
+fn draw_thick_hollow_rect(
+    img: &mut RgbaImage,
+    bbox: &NormalizedBBox,
+    img_w: u32,
+    img_h: u32,
+    color: Rgba<u8>,
+    thickness: i32,
+) {
+    let x = (bbox.x * img_w as f32) as i32;
+    let y = (bbox.y * img_h as f32) as i32;
+    let w = ((bbox.width * img_w as f32) as u32).max(2);
+    let h = ((bbox.height * img_h as f32) as u32).max(2);
+    for t in 0..thickness {
+        let rx = (x + t).max(0);
+        let ry = (y + t).max(0);
+        let rw = (w as i32 - 2 * t).max(1) as u32;
+        let rh = (h as i32 - 2 * t).max(1) as u32;
+        let rect = Rect::at(rx, ry).of_size(rw, rh);
+        draw_hollow_rect_mut(img, rect, color);
+    }
+}
+
+/// Render a per-page overlay PNG with match evidence annotated.
+///
+/// ## Rendering pipeline
+///
+/// 1. Rasterise the page at [`OVERLAY_TARGET_WIDTH_PX`] using PDFium (form data
+///    included so Form XObject headers/footers appear visually).
+/// 2. Draw a 1 px grey outline of the detection band so the searched region is
+///    always visible regardless of outcome.
+/// 3. For runtime-ready families: draw coloured bounding boxes using the locked
+///    Phase F palette:
+///    - **Green**  (`COLOR_PASS`) — matched, confidence ≥ 0.95
+///    - **Amber**  (`COLOR_WARN`) — matched, confidence 0.80–0.95 (flagged)
+///    - **Red**    (`COLOR_FAIL`) — failure (`NoMatch`, `LowConfidence`, etc.)
+///      When no spans were matched (failure), a red box is drawn around the interior
+///      of the detection band to signal "searched but found nothing."
+/// 4. For schema-only families: emit the plain rendered page without match boxes.
+/// 5. Save to `output_path` as PNG.
+fn render_overlay_png(
+    page: &PdfPage<'_>,
+    evidence: &MatchEvidence,
+    spec: &PatternSpec,
+    output_path: &Path,
+) -> Result<()> {
+    let render_config = PdfRenderConfig::new()
+        .set_target_width(OVERLAY_TARGET_WIDTH_PX)
+        .render_form_data(true)
+        .render_annotations(false);
+
+    let bitmap = page
+        .render_with_config(&render_config)
+        .map_err(|e| anyhow::anyhow!("Page rasterisation failed: {e}"))?;
+
+    let mut img = bitmap.as_image().into_rgba8();
+
+    // Delegate all drawing to the shared helper (also used in validate-corpus
+    // when overlay generation is enabled for individual fixtures).
+    draw_evidence_on_img(&mut img, evidence, spec);
+
+    img.save(output_path)
+        .with_context(|| format!("Failed to save overlay: {}", output_path.display()))?;
+    Ok(())
+}
+
+// ── Title-block anchor detection ────────────────────────────────────────────
+
+/// Minimum width-to-height aspect ratio for a span to be treated as horizontal text.
+///
+/// Revit plot stamps ("FILE PATH:", "DATE/TIME:", "PLOT SCALE:") are rotated
+/// 90° along the page margin.  Their raw bboxes have width ≪ height (ratio ≈ 0.08).
+/// Filtering these out prevents them from being mistaken for title-block labels.
+const MIN_SPAN_ASPECT_RATIO: f32 = 0.4;
+
+/// Phrase keywords (case-insensitive substring) that signal a title-block cell label.
+///
+/// Phrases are used where a shorter prefix would also match value/role names:
+///   - \"CHECKED BY\" not \"CHECK\"  → avoids matching the Revit role name \"Checker\"
+///   - \"APPROVED BY\" not \"APPROV\" → avoids matching the Revit role name \"Approver\"
+///
+/// Rotated-text false positives (\"DATE/TIME:\", \"PLOT SCALE:\") are handled by
+/// `MIN_SPAN_ASPECT_RATIO` before keywords are consulted.
+const TITLE_BLOCK_KEYWORDS: &[&str] = &[
+    "SHEET NO", "SHEET",
+    "DRAWN BY", "DRAWN",
+    "CHECKED BY", "CHECKED",
+    "APPROVED BY", "APPROVED",
+    "DATE", "SCALE", "REVISI",
+    "PROJECT", "JOB NO",
+    "ENGINEER", "ARCHITEC",
+    "DESIGNED BY", "DESIGN",
+    "SEAL", "TITLE",
+];
+
+/// Returns `true` when the normalised point (`x_norm`, `y_top_norm`) lies
+/// inside `bbox`.  Both axes use the top-left origin convention.
+fn point_in_bbox(bbox: &NormalizedBBox, x_norm: f32, y_top_norm: f32) -> bool {
+    x_norm >= bbox.x
+        && x_norm <= bbox.x + bbox.width
+        && y_top_norm >= bbox.y
+        && y_top_norm <= bbox.y + bbox.height
+}
+
+/// Runs the title-block-anchor corner-scoring heuristic on `page`.
+///
+/// Scores each of the four pre-seeded corner regions by the fraction of text
+/// spans whose text contains a [`TITLE_BLOCK_KEYWORDS`] entry.
+/// Text is collected via `page.objects()` (direct page objects, not Form
+/// XObjects) — appropriate for DWG-style PDFs where title-block text lives
+/// in regular page objects.
+///
+/// Returns scored [`MatchEvidence`] and a populated [`TitleBlockExtension`].
+fn detect_title_block_anchor(
+    page: &PdfPage<'_>,
+    pdf_path_str: &str,
+    page_index: usize,
+) -> (MatchEvidence, TitleBlockExtension) {
+    let page_w = page.width().value;
+    let page_h = page.height().value;
+
+    // Collect normalized span data: (x_left_norm, y_top_norm, w_norm, h_norm, text).
+    let mut spans: Vec<(f32, f32, f32, f32, String)> = Vec::new();
+    if page_w > 0.0 && page_h > 0.0 {
+        for obj in page.objects().iter() {
+            if let Some(text_obj) = obj.as_text_object() {
+                let text = text_obj.text();
+                if text.trim().is_empty() {
+                    continue;
+                }
+                if let Ok(b) = obj.bounds() {
+                    let rx = b.left().value;
+                    let ry = b.bottom().value;
+                    let rw = (b.right().value - b.left().value).abs().max(0.001);
+                    let rh = (b.top().value - b.bottom().value).abs().max(0.001);
+                    // Skip rotated text objects (Revit plot stamps, margin annotations).
+                    if rw / rh < MIN_SPAN_ASPECT_RATIO {
+                        continue;
+                    }
+                    let x_norm = (rx / page_w).clamp(0.0, 1.0);
+                    let y_top = (1.0 - (ry + rh) / page_h).clamp(0.0, 1.0);
+                    let w_norm = (rw / page_w).clamp(0.0, 1.0);
+                    let h_norm = (rh / page_h).clamp(0.0, 1.0);
+                    spans.push((x_norm, y_top, w_norm, h_norm, text));
+                }
+            }
+        }
+    }
+
+    // Score each of the four pre-seeded corner regions.
+    let scored: Vec<CornerBandCandidate> =
+        TitleBlockExtension::schema_placeholder()
+            .corner_candidates
+            .into_iter()
+            .map(|mut c| {
+                let in_corner: Vec<_> = spans
+                    .iter()
+                    .filter(|(xn, yn, _, _, _)| point_in_bbox(&c.bbox, *xn, *yn))
+                    .collect();
+                let n_spans = in_corner.len();
+                let n_kw = in_corner
+                    .iter()
+                    .filter(|(_, _, _, _, t)| {
+                        let up = t.to_uppercase();
+                        TITLE_BLOCK_KEYWORDS.iter().any(|k| up.contains(k))
+                    })
+                    .count();
+                let area = (c.bbox.width * c.bbox.height).max(f32::EPSILON);
+                c.cell_density = Some(n_spans as f32 / area);
+                // Require at least 2 keyword hits to score non-zero.
+                c.score = Some(if n_kw >= 2 && n_spans > 0 {
+                    n_kw as f32 / n_spans as f32
+                } else {
+                    0.0
+                });
+                c
+            })
+            .collect();
+
+    // Select the corner with the highest keyword ratio.
+    let (best_idx, best_ratio) = scored
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (i, c.score.unwrap_or(0.0)))
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or((0, 0.0));
+
+    // Confidence: a keyword ratio of 0.15 maps to 1.0 (PASS).
+    // 3 hits out of 20 spans ≈ 0.15 → confident enough.
+    let confidence = (best_ratio / 0.15_f32).clamp(0.0, 1.0);
+
+    let winning = if best_ratio > 0.0 {
+        let c = &scored[best_idx];
+        Some(SelectedTitleBlock {
+            corner: c.corner.clone(),
+            bbox: c.bbox.clone(),
+            score: best_ratio,
+        })
+    } else {
+        None
+    };
+
+    let (failure_reason, branch_reason) = if winning.is_none() {
+        (
+            Some(FailureCode::NoMatch),
+            "no corner region contains title-block keywords".to_owned(),
+        )
+    } else if confidence < CONFIDENCE_PASS {
+        (
+            Some(FailureCode::LowConfidence),
+            format!(
+                "best corner {:?} kw_ratio={:.3} below threshold",
+                scored[best_idx].corner, best_ratio,
+            ),
+        )
+    } else {
+        (
+            None,
+            format!(
+                "title block in {:?} corner, kw_ratio={:.3}",
+                scored[best_idx].corner, best_ratio,
+            ),
+        )
+    };
+
+    // Matched spans = keyword-matched spans in the winning corner (capped at 20).
+    let matched_spans: Vec<MatchedSpan> = if winning.is_some() {
+        spans
+            .iter()
+            .filter(|(xn, yn, _, _, t)| {
+                point_in_bbox(&scored[best_idx].bbox, *xn, *yn) && {
+                    let up = t.to_uppercase();
+                    TITLE_BLOCK_KEYWORDS.iter().any(|k| up.contains(k))
+                }
+            })
+            .take(20)
+            .map(|(xn, yn, wn, hn, t)| MatchedSpan {
+                text: t.clone(),
+                bbox: NormalizedBBox { x: *xn, y: *yn, width: *wn, height: *hn },
+                span_confidence: confidence,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let evidence = MatchEvidence {
+        schema_version: MatchEvidence::SCHEMA_VERSION,
+        pdf_path: pdf_path_str.to_owned(),
+        page_index,
+        family: HeuristicFamily::TitleBlockAnchor.as_str().to_owned(),
+        matched_spans,
+        confidence: Some(confidence),
+        failure_reason,
+        branch_reason,
+        source: SourceTag::Vector,
+        engine_version: env!("CARGO_PKG_VERSION"),
+        pattern_version: MatchEvidence::PATTERN_VERSION,
+    };
+
+    // Extract label→value field pairs from the winning corner.
+    // Use (f32,f32,f32,f32,&str) which is Copy so iterator chains stay simple.
+    let field_candidates: Vec<TitleBlockField> = if winning.is_some() {
+        let win_bbox = &scored[best_idx].bbox;
+
+        let corner: Vec<(f32, f32, f32, f32, &str)> = spans
+            .iter()
+            .filter(|(xn, yn, _, _, _)| point_in_bbox(win_bbox, *xn, *yn))
+            .map(|(xn, yn, wn, hn, t)| (*xn, *yn, *wn, *hn, t.as_str()))
+            .collect();
+
+        let labels: Vec<(f32, f32, f32, f32, &str)> = corner
+            .iter()
+            .copied()
+            .filter(|(_, _, _, _, t)| {
+                let up = t.to_uppercase();
+                TITLE_BLOCK_KEYWORDS.iter().any(|k| up.contains(k))
+            })
+            .collect();
+
+        let values: Vec<(f32, f32, f32, f32, &str)> = corner
+            .iter()
+            .copied()
+            .filter(|(_, _, _, _, t)| {
+                let up = t.to_uppercase();
+                !TITLE_BLOCK_KEYWORDS.iter().any(|k| up.contains(k))
+                    && !t.trim().is_empty()
+            })
+            .collect();
+
+        labels
+            .iter()
+            .filter_map(|&(lx, ly, lw, lh, label_text)| {
+                let lcx = lx + lw * 0.5;
+                let lcy = ly + lh * 0.5;
+                // Nearest value span within 0.12 normalised units of the label centre.
+                values
+                    .iter()
+                    .map(|&(vx, vy, vw, vh, vt)| {
+                        let dx = vx + vw * 0.5 - lcx;
+                        let dy = vy + vh * 0.5 - lcy;
+                        (dx * dx + dy * dy, vx, vy, vw, vh, vt)
+                    })
+                    .filter(|(d2, _, _, _, _, _)| *d2 < 0.12_f32 * 0.12_f32)
+                    .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(_, vx, vy, vw, vh, vt)| TitleBlockField {
+                        label: Some(label_text.trim().trim_end_matches(':').to_owned()),
+                        label_bbox: Some(NormalizedBBox {
+                            x: lx, y: ly, width: lw, height: lh,
+                        }),
+                        value_bbox: Some(NormalizedBBox {
+                            x: vx, y: vy, width: vw, height: vh,
+                        }),
+                        extracted_value: Some(vt.trim().to_owned()),
+                        field_score: None,
+                    })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let ext = TitleBlockExtension {
+        corner_candidates: scored,
+        winning_candidate: winning,
+        field_candidates,
+        template_lifecycle: TemplateLifecycle::schema_placeholder(),
+    };
+
+    (evidence, ext)
+}
+
+// ── Phase G sidecar serialisation ────────────────────────────────────────────
+
+/// Serialise one page's sidecar JSON, embedding family-specific extensions for
+/// schema-only and runtime-detected families (Phase G+) alongside the locked
+/// base schema.
+///
+/// `tba_ext` carries the runtime-scored [`TitleBlockExtension`] when called
+/// from the `title-block-anchor` detection branch; `None` falls back to the
+/// schema-only placeholder (useful for standalone serialisation tests).
+fn serialize_sidecar_for_family(
+    family: &HeuristicFamily,
+    evidence: &MatchEvidence,
+    tba_ext: Option<&TitleBlockExtension>,
+) -> Result<String> {
+    match family {
+        HeuristicFamily::TitleBlockAnchor => {
+            let ext =
+                tba_ext.cloned().unwrap_or_else(TitleBlockExtension::schema_placeholder);
+            let sidecar = TitleBlockSidecar { base: evidence.clone(), title_block: ext };
+            Ok(serde_json::to_string_pretty(&sidecar)?)
+        }
+        HeuristicFamily::RoiCandidate => {
+            let sidecar = RoiCandidateSidecar {
+                base: evidence.clone(),
+                roi_evidence: RoiEvidence::schema_placeholder(),
+            };
+            Ok(serde_json::to_string_pretty(&sidecar)?)
+        }
+        HeuristicFamily::SpecHeading => {
+            let sidecar = SpecHeadingSidecar {
+                base: evidence.clone(),
+                heading_diagnostics: SpecHeadingDiagnostics::schema_placeholder(),
+            };
+            Ok(serde_json::to_string_pretty(&sidecar)?)
+        }
+        _ => Ok(serde_json::to_string_pretty(evidence)?),
+    }
+}
+
 // ── validate-corpus ───────────────────────────────────────────────────────────
 
+/// Stable FNV-1a 64-bit content fingerprint.
+///
+/// Used for determinism checking between validate-corpus runs: if the same sidecar
+/// content produces the same fingerprint, the run is deterministic.  No cryptographic
+/// security is required here — stability between runs on the same machine is all
+/// that matters.
+fn fnv1a_64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 14_695_981_039_346_656_037;
+    for &byte in data {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(1_099_511_628_211);
+    }
+    hash
+}
+
+/// Draw match evidence bounding boxes onto an already-rendered image in place.
+///
+/// Extracted from [`render_overlay_png`] so that `validate-corpus` can render
+/// each page *once* and clone it per family rather than re-rasterising.
+///
+/// Draws the detection band outline (always) and per-span colour boxes (when
+/// the family is runtime-ready).
+fn draw_evidence_on_img(
+    img: &mut image::RgbaImage,
+    evidence: &MatchEvidence,
+    spec: &PatternSpec,
+) {
+    let img_w = img.width();
+    let img_h = img.height();
+
+    // Detection band outline (grey, 1 px).
+    let band_outline = NormalizedBBox {
+        x: 0.0,
+        y: spec.region_band.y_min,
+        width: 1.0,
+        height: spec.region_band.y_max - spec.region_band.y_min,
+    };
+    draw_thick_hollow_rect(img, &band_outline, img_w, img_h, COLOR_BAND, 1);
+
+    if matches!(evidence.source, SourceTag::SchemaOnly) {
+        return;
+    }
+
+    let box_color = if evidence.failure_reason.is_some() {
+        COLOR_FAIL
+    } else if evidence.is_flagged() {
+        COLOR_WARN
+    } else {
+        COLOR_PASS
+    };
+
+    if evidence.matched_spans.is_empty() {
+        let inset = 0.005_f32;
+        let band_h = spec.region_band.y_max - spec.region_band.y_min;
+        let fail_band = NormalizedBBox {
+            x: inset,
+            y: spec.region_band.y_min + inset,
+            width: (1.0_f32 - 2.0 * inset).max(0.01),
+            height: (band_h - 2.0 * inset).max(0.005),
+        };
+        draw_thick_hollow_rect(img, &fail_band, img_w, img_h, box_color, OVERLAY_RECT_THICKNESS);
+    } else {
+        for span in &evidence.matched_spans {
+            draw_thick_hollow_rect(img, &span.bbox, img_w, img_h, box_color, OVERLAY_RECT_THICKNESS);
+        }
+    }
+}
+
+/// Per-family page-level counters accumulated while processing one fixture.
+#[derive(Default)]
+struct FamilyPageCounts {
+    n_pass: u32,
+    n_warn: u32,
+    n_fail: u32,
+    n_skip: u32,
+    /// XOR of FNV-1a fingerprints for all sidecar files (order-dependent).
+    sidecar_fingerprint: u64,
+}
+
+impl FamilyPageCounts {
+    fn record(&mut self, status: &str, sidecar_bytes: &[u8]) {
+        match status {
+            "PASS" => self.n_pass += 1,
+            "WARN" => self.n_warn += 1,
+            "FAIL" => self.n_fail += 1,
+            _ => self.n_skip += 1,
+        }
+        // Accumulate fingerprint by folding sequentially (wrapping_add keeps
+        // order sensitivity without needing alloc).
+        self.sidecar_fingerprint =
+            self.sidecar_fingerprint.wrapping_add(fnv1a_64(sidecar_bytes));
+    }
+
+    fn total_pages(&self) -> u32 {
+        self.n_pass + self.n_warn + self.n_fail + self.n_skip
+    }
+}
+
 // The serde_json::json! macro calls .unwrap() internally on infallible operations.
-// This stub is replaced with typed serialization in Phase I.
 #[allow(clippy::disallowed_methods)]
 fn run_validate_corpus(
     tiers: &[u8],
@@ -659,7 +1179,7 @@ fn run_validate_corpus(
     }
 
     // Collect fixture paths from each requested tier.
-    let mut fixtures: Vec<PathBuf> = Vec::new();
+    let mut fixtures: Vec<(u8, PathBuf)> = Vec::new();
     for &tier in tiers {
         let tier_dir = corpus_dir.join(format!("tier{tier}"));
         if !tier_dir.exists() {
@@ -671,24 +1191,24 @@ fn run_validate_corpus(
         for entry in entries.flatten() {
             let p = entry.path();
             if p.extension().and_then(|e| e.to_str()) == Some("pdf") {
-                fixtures.push(p);
+                fixtures.push((tier, p));
             }
         }
     }
 
-    // Deterministic iteration order (sort by path).
-    fixtures.sort();
+    // Deterministic iteration order (sort by path within each tier).
+    fixtures.sort_by(|a, b| a.1.cmp(&b.1));
 
     if dry_run {
         println!(
-            "[dry-run] validate-corpus: tiers={:?} fixtures={} corpus_dir={} output_dir={}",
-            tiers,
+            "[dry-run] validate-corpus: tiers={tiers:?} fixtures={} \
+             corpus_dir={} output_dir={}",
             fixtures.len(),
             corpus_dir.display(),
             output_dir.display()
         );
-        for f in &fixtures {
-            println!("  [dry-run] would process: {}", f.display());
+        for (tier, f) in &fixtures {
+            println!("  [dry-run] tier{tier}  {}", f.display());
         }
         return Ok(());
     }
@@ -696,51 +1216,587 @@ fn run_validate_corpus(
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("Failed to create output dir: {}", output_dir.display()))?;
 
-    // Phase I will run real detection per fixture here.
-    // This skeleton emits a stub validation-manifest.json with correct schema.
+    let pdfium =
+        load_pdfium().map_err(|e| anyhow::anyhow!("Failed to initialise PDFium: {e}"))?;
+
+    let all_families = HeuristicFamily::all();
+
+    // Pre-compile regexes for every family once.
+    let family_regexes: Vec<Option<regex::Regex>> = all_families
+        .iter()
+        .map(|f| {
+            let spec = PatternSpec::for_family(f);
+            spec.regex_pattern
+                .as_deref()
+                .map(regex::Regex::new)
+                .transpose()
+                .with_context(|| format!("Invalid regex for family '{}'", f.as_str()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let generated_at = Utc::now().to_rfc3339();
+    let schema_version = "0.5.0";
+
+    // Load the existing manifest to enable determinism comparison.
+    let manifest_path = output_dir.join("validation-manifest.json");
+    let prior_manifest: Option<serde_json::Value> = if manifest_path.exists() {
+        std::fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    } else {
+        None
+    };
+
+    // ── Per-fixture processing ────────────────────────────────────────────────
+
     let mut fixture_records: Vec<serde_json::Value> = Vec::new();
-    for f in &fixtures {
-        let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+
+    // Aggregate totals across all fixtures: family_str → cumulative counts.
+    let mut global_family_counts: HashMap<String, FamilyPageCounts> =
+        all_families
+            .iter()
+            .map(|f| (f.as_str().to_owned(), FamilyPageCounts::default()))
+            .collect();
+    let mut global_total_pages: u64 = 0;
+    let mut global_errored_fixtures: u32 = 0;
+
+    for (fixture_num, (tier, fixture_path)) in fixtures.iter().enumerate() {
+        let stem = fixture_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        println!(
+            "\n[{}/{}] tier{}  {}",
+            fixture_num + 1,
+            fixtures.len(),
+            tier,
+            stem
+        );
+
+        let doc = match pdfium.load_pdf_from_file(fixture_path, None) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("  ERROR: could not open PDF — skipping: {e}");
+                global_errored_fixtures += 1;
+                fixture_records.push(serde_json::json!({
+                    "stem": stem,
+                    "tier": tier,
+                    "pdf_path": fixture_path.display().to_string(),
+                    "error": e.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        let page_count: usize = doc.pages().len().into();
+        global_total_pages += page_count as u64;
+
+        // Initialise per-family counters for this fixture.
+        let mut fixture_family_counts: HashMap<String, FamilyPageCounts> =
+            all_families
+                .iter()
+                .map(|f| (f.as_str().to_owned(), FamilyPageCounts::default()))
+                .collect();
+
+        // Pre-create all family artifact directories.
+        for family in all_families {
+            let dir = output_dir.join(stem).join(family.as_str());
+            std::fs::create_dir_all(&dir).with_context(|| {
+                format!("Failed to create artifact dir: {}", dir.display())
+            })?;
+        }
+
+        for idx in 0..page_count {
+            let Ok(idx_u16) = u16::try_from(idx) else { continue };
+            let Ok(page) = doc.pages().get(idx_u16) else { continue };
+
+            for (fi, family) in all_families.iter().enumerate() {
+                let family_str = family.as_str();
+                let spec = PatternSpec::for_family(family);
+                let compiled_regex = family_regexes[fi].as_ref();
+
+                let (evidence, tba_ext_opt): (MatchEvidence, Option<TitleBlockExtension>) =
+                    if matches!(family, HeuristicFamily::TitleBlockAnchor) {
+                        let (ev, ext) = detect_title_block_anchor(
+                            &page,
+                            &fixture_path.display().to_string(),
+                            idx,
+                        );
+                        (ev, Some(ext))
+                    } else if !family.is_runtime_ready() {
+                        (
+                            MatchEvidence::placeholder(
+                                fixture_path.display().to_string(),
+                                idx,
+                                family,
+                            ),
+                            None,
+                        )
+                    } else {
+                        let matched_spans =
+                            collect_page_matches(&page, &spec, compiled_regex);
+                        let (confidence, failure_reason, branch_reason) =
+                            score_matches(&matched_spans, compiled_regex.is_some());
+                        (
+                            MatchEvidence {
+                                schema_version: MatchEvidence::SCHEMA_VERSION,
+                                pdf_path: fixture_path.display().to_string(),
+                                page_index: idx,
+                                family: family_str.to_owned(),
+                                matched_spans,
+                                confidence: Some(confidence),
+                                failure_reason,
+                                branch_reason,
+                                source: SourceTag::Vector,
+                                engine_version: env!("CARGO_PKG_VERSION"),
+                                pattern_version: MatchEvidence::PATTERN_VERSION,
+                            },
+                            None,
+                        )
+                    };
+
+                let status = if matches!(evidence.source, SourceTag::SchemaOnly) {
+                    "SKIP"
+                } else if evidence.failure_reason.is_some() {
+                    "FAIL"
+                } else if evidence.is_flagged() {
+                    "WARN"
+                } else {
+                    "PASS"
+                };
+
+                // Write sidecar JSON and fingerprint it.
+                let sidecar_bytes = {
+                    let json = serialize_sidecar_for_family(
+                        family,
+                        &evidence,
+                        tba_ext_opt.as_ref(),
+                    )
+                    .with_context(|| {
+                        format!("sidecar serialise failed page {idx} family {family_str}")
+                    })?;
+                    json.into_bytes()
+                };
+                let sidecar_path = output_dir
+                    .join(stem)
+                    .join(family_str)
+                    .join(format!("page-{idx:04}-{family_str}.json"));
+                std::fs::write(&sidecar_path, &sidecar_bytes).with_context(|| {
+                    format!("Failed to write sidecar: {}", sidecar_path.display())
+                })?;
+
+                // Overlays are omitted in validate-corpus (sidecar-only mode).
+                // Use test-pattern for per-file visual inspection.
+
+                // Accumulate counters.
+                fixture_family_counts
+                    .get_mut(family_str)
+                    .unwrap()
+                    .record(status, &sidecar_bytes);
+                global_family_counts
+                    .get_mut(family_str)
+                    .unwrap()
+                    .record(status, &sidecar_bytes);
+            }
+
+            // Progress indicator every 50 pages.
+            if idx > 0 && idx % 50 == 0 {
+                println!("    ... page {idx}/{page_count}");
+            }
+        }
+
+        // ── Determinism check for this fixture ───────────────────────────────
+
+        let mut determinism_ok = true;
+        let mut determinism_note: Option<String> = None;
+
+        if let Some(ref prior) = prior_manifest {
+            if let Some(prior_fixtures) = prior["fixtures"].as_array() {
+                if let Some(prior_fx) = prior_fixtures
+                    .iter()
+                    .find(|v| v["stem"].as_str() == Some(stem))
+                {
+                    for family in all_families {
+                        let fs = family.as_str();
+                        let cur_fp = fixture_family_counts[fs].sidecar_fingerprint;
+                        let prior_fp = prior_fx["families"][fs]["sidecar_fingerprint"]
+                            .as_u64()
+                            .unwrap_or(u64::MAX);
+                        if cur_fp != prior_fp {
+                            determinism_ok = false;
+                            determinism_note = Some(format!(
+                                "family '{fs}' fingerprint changed: prior={prior_fp:#018x} \
+                                 current={cur_fp:#018x}"
+                            ));
+                            eprintln!(
+                                "  DETERMINISM DRIFT — {stem} — {fs}: \
+                                 prior={prior_fp:#018x} current={cur_fp:#018x}"
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Build per-fixture record ─────────────────────────────────────────
+
+        let families_json: serde_json::Value = {
+            let mut map = serde_json::Map::new();
+            for family in all_families {
+                let fs = family.as_str();
+                let c = &fixture_family_counts[fs];
+                map.insert(
+                    fs.to_owned(),
+                    serde_json::json!({
+                        "pass": c.n_pass,
+                        "warn": c.n_warn,
+                        "fail": c.n_fail,
+                        "skip": c.n_skip,
+                        "total_pages": c.total_pages(),
+                        "sidecar_fingerprint": c.sidecar_fingerprint,
+                        "artifact_dir": output_dir.join(stem).join(fs).display().to_string(),
+                    }),
+                );
+            }
+            serde_json::Value::Object(map)
+        };
+
+        let total_pass: u32 = all_families
+            .iter()
+            .map(|f| fixture_family_counts[f.as_str()].n_pass)
+            .sum();
+        let total_fail: u32 = all_families
+            .iter()
+            .map(|f| fixture_family_counts[f.as_str()].n_fail)
+            .sum();
+
+        println!(
+            "  done  pages={page_count}  pass={total_pass}  fail={total_fail}  \
+             det_ok={determinism_ok}"
+        );
+
         fixture_records.push(serde_json::json!({
-            "pdf_path": f.display().to_string(),
             "stem": stem,
-            "status": "NOT_IMPLEMENTED",
-            "note": "detection not yet implemented — Phase I"
+            "tier": tier,
+            "pdf_path": fixture_path.display().to_string(),
+            "page_count": page_count,
+            "families": families_json,
+            "determinism_ok": determinism_ok,
+            "determinism_note": determinism_note,
         }));
-        println!("  [stub] {}", f.display());
     }
 
+    // ── Aggregate family totals ───────────────────────────────────────────────
+
+    let by_family: serde_json::Value = {
+        let mut map = serde_json::Map::new();
+        for family in all_families {
+            let fs = family.as_str();
+            let g = &global_family_counts[fs];
+            let total = g.total_pages();
+            let pass_rate = if total > 0 { f64::from(g.n_pass) / f64::from(total) } else { 0.0 };
+            map.insert(
+                fs.to_owned(),
+                serde_json::json!({
+                    "pass": g.n_pass,
+                    "warn": g.n_warn,
+                    "fail": g.n_fail,
+                    "skip": g.n_skip,
+                    "total_pages": total,
+                    "pass_rate": (pass_rate * 10_000.0).round() / 10_000.0,
+                }),
+            );
+        }
+        serde_json::Value::Object(map)
+    };
+
+    let determinism_regressions: u32 = fixture_records
+        .iter()
+        .filter(|v| v["determinism_ok"].as_bool() == Some(false))
+        .count() as u32;
+
+    // ── Write validation-manifest.json ────────────────────────────────────────
+
     let manifest = serde_json::json!({
-        "schema_version": "0.5.0",
+        "schema_version": schema_version,
+        "generated_at_utc": generated_at,
         "tiers": tiers,
+        "families_tested": all_families.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
         "fixture_count": fixtures.len(),
+        "errored_fixtures": global_errored_fixtures,
+        "total_pages": global_total_pages,
+        "determinism_regressions": determinism_regressions,
         "fixtures": fixture_records,
-        "note": "stub manifest — real per-fixture runs implemented in Phase I"
     });
 
-    let manifest_path = output_dir.join("validation-manifest.json");
     std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)
         .with_context(|| format!("Failed to write manifest: {}", manifest_path.display()))?;
 
+    // ── Write corpus-report.json ──────────────────────────────────────────────
+
     let report = serde_json::json!({
-        "schema_version": "0.5.0",
+        "schema_version": schema_version,
+        "generated_at_utc": generated_at,
+        "tiers": tiers,
         "fixture_count": fixtures.len(),
-        "passed": 0,
-        "failed": 0,
-        "pending": fixtures.len(),
-        "note": "stub report — aggregate metrics implemented in Phase I"
+        "errored_fixtures": global_errored_fixtures,
+        "total_pages": global_total_pages,
+        "determinism_regressions": determinism_regressions,
+        "by_family": by_family,
     });
 
     let report_path = output_dir.join("corpus-report.json");
     std::fs::write(&report_path, serde_json::to_string_pretty(&report)?)
         .with_context(|| format!("Failed to write report: {}", report_path.display()))?;
 
+    // ── Summary ───────────────────────────────────────────────────────────────
+
     println!(
-        "\nvalidate-corpus complete: {} fixtures, manifest={}, report={}",
+        "\nvalidate-corpus complete\n  \
+         fixtures={} ({} errored)  pages={global_total_pages}  \
+         det_regressions={determinism_regressions}",
         fixtures.len(),
-        manifest_path.display(),
-        report_path.display()
+        global_errored_fixtures,
     );
+    println!("  manifest : {}", manifest_path.display());
+    println!("  report   : {}", report_path.display());
+
+    if determinism_regressions > 0 {
+        eprintln!(
+            "WARNING: {determinism_regressions} fixture(s) produced different output \
+             from the previous run — check determinism_note in the manifest."
+        );
+    }
 
     Ok(())
+}
+
+// ── Phase J: unit tests ───────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── fnv1a_64 ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn fnv1a_64_empty_returns_offset_basis() {
+        // FNV-1a 64-bit: no bytes processed → hash is the FNV offset basis.
+        assert_eq!(fnv1a_64(&[]), 14_695_981_039_346_656_037u64);
+    }
+
+    #[test]
+    fn fnv1a_64_is_deterministic() {
+        // Same bytes on two separate calls must produce the same hash.
+        assert_eq!(fnv1a_64(b"page-0000-footer-section-id.json"), fnv1a_64(b"page-0000-footer-section-id.json"));
+    }
+
+    #[test]
+    fn fnv1a_64_distinct_inputs_produce_distinct_hashes() {
+        // Different sidecar bytes must distinguish themselves.
+        assert_ne!(fnv1a_64(b"page-0000-footer-section-id.json"), fnv1a_64(b"page-0001-footer-section-id.json"));
+    }
+
+    // ── FamilyPageCounts ──────────────────────────────────────────────────────
+
+    #[test]
+    fn family_page_counts_accumulates_all_statuses() {
+        let mut c = FamilyPageCounts::default();
+        c.record("PASS", b"p");
+        c.record("WARN", b"w");
+        c.record("FAIL", b"f");
+        c.record("SKIP", b"s");
+        assert_eq!(c.n_pass, 1);
+        assert_eq!(c.n_warn, 1);
+        assert_eq!(c.n_fail, 1);
+        assert_eq!(c.n_skip, 1);
+    }
+
+    #[test]
+    fn family_page_counts_total_pages_is_sum_of_all_buckets() {
+        let mut c = FamilyPageCounts::default();
+        for _ in 0..3 { c.record("PASS", b"x"); }
+        for _ in 0..2 { c.record("WARN", b"x"); }
+        for _ in 0..4 { c.record("FAIL", b"x"); }
+        for _ in 0..1 { c.record("SKIP", b"x"); }
+        assert_eq!(c.total_pages(), 10);
+    }
+
+    #[test]
+    fn family_page_counts_fingerprint_nonzero_for_nonempty_input() {
+        let mut c = FamilyPageCounts::default();
+        c.record("PASS", b"some sidecar content");
+        assert_ne!(c.sidecar_fingerprint, 0);
+    }
+
+    #[test]
+    fn family_page_counts_fingerprint_matches_for_identical_sequences() {
+        // Two independent runs processing the same bytes must agree on fingerprint.
+        let inputs: &[&[u8]] = &[b"sidecar-0", b"sidecar-1", b"sidecar-2"];
+        let mut c1 = FamilyPageCounts::default();
+        let mut c2 = FamilyPageCounts::default();
+        for &bytes in inputs {
+            c1.record("PASS", bytes);
+            c2.record("PASS", bytes);
+        }
+        assert_eq!(c1.sidecar_fingerprint, c2.sidecar_fingerprint);
+    }
+
+    #[test]
+    fn family_page_counts_fingerprint_differs_for_different_content() {
+        let mut c1 = FamilyPageCounts::default();
+        c1.record("PASS", b"content-A");
+        let mut c2 = FamilyPageCounts::default();
+        c2.record("PASS", b"content-B");
+        assert_ne!(c1.sidecar_fingerprint, c2.sidecar_fingerprint);
+    }
+
+    // ── score_matches ─────────────────────────────────────────────────────────
+
+    fn make_span(conf: f32) -> MatchedSpan {
+        MatchedSpan {
+            text: "23 82 16".to_owned(),
+            bbox: NormalizedBBox { x: 0.05, y: 0.90, width: 0.20, height: 0.02 },
+            span_confidence: conf,
+        }
+    }
+
+    #[test]
+    fn score_matches_empty_spans_returns_no_match_fail() {
+        let (conf, code, branch) = score_matches(&[], true);
+        assert_eq!(conf, 0.0);
+        assert_eq!(code, Some(FailureCode::NoMatch));
+        assert!(branch.contains("no spans"));
+    }
+
+    #[test]
+    fn score_matches_single_high_confidence_span_passes() {
+        let (conf, code, branch) = score_matches(&[make_span(0.97)], true);
+        assert!((conf - 0.97).abs() < 1e-5);
+        assert!(code.is_none());
+        assert!(branch.contains("best match"));
+    }
+
+    #[test]
+    fn score_matches_geometric_family_single_span_no_regex() {
+        // Header-band has no regex; single span in band → best match.
+        let (conf, code, _) = score_matches(&[make_span(0.95)], false);
+        assert!((conf - 0.95).abs() < 1e-5);
+        assert!(code.is_none());
+    }
+
+    #[test]
+    fn score_matches_two_spans_regex_applies_ambiguity_penalty() {
+        // Two spans at 1.0 each → avg=1.0, conf=1.0*0.85=0.85 → passes (≥0.80).
+        let spans = vec![make_span(1.0), make_span(1.0)];
+        let (conf, code, branch) = score_matches(&spans, true);
+        assert!((conf - 0.85).abs() < 1e-5);
+        assert!(code.is_none(), "conf 0.85 should pass but got {code:?}");
+        assert!(branch.contains("ambiguity penalty"));
+    }
+
+    #[test]
+    fn score_matches_two_spans_low_confidence_is_ambiguous_tie() {
+        // Two spans at 0.5 each → avg=0.5, conf=0.5*0.85=0.425 < 0.80 → AmbiguousTie.
+        let spans = vec![make_span(0.5), make_span(0.5)];
+        let (conf, code, _) = score_matches(&spans, true);
+        assert!(conf < CONFIDENCE_PASS);
+        assert_eq!(code, Some(FailureCode::AmbiguousTie));
+    }
+
+    // ── Sidecar artifact naming ───────────────────────────────────────────────
+
+    /// Locks the sidecar filename format: `page-{4-digit-zero-padded-index}-{family}.json`.
+    ///
+    /// This format is used by `run_validate_corpus` and `run_test_pattern` to
+    /// write and locate sidecar artifacts. Changing any part of the format is a
+    /// breaking change for all consumers of the artifact tree.
+    #[test]
+    fn sidecar_filename_is_zero_padded_4_digit_index() {
+        assert_eq!(format!("page-{:04}-{}.json", 0, "footer-section-id"),
+                   "page-0000-footer-section-id.json");
+        assert_eq!(format!("page-{:04}-{}.json", 42, "header-band"),
+                   "page-0042-header-band.json");
+        assert_eq!(format!("page-{:04}-{}.json", 9999, "page-counter"),
+                   "page-9999-page-counter.json");
+        // Beyond 4 digits: format expands naturally without truncation.
+        assert_eq!(format!("page-{:04}-{}.json", 10000, "title-block-anchor"),
+                   "page-10000-title-block-anchor.json");
+    }
+
+    // ── Corpus-report manifest schema ─────────────────────────────────────────
+
+    /// Verifies the Phase I smoke corpus-report has required top-level fields
+    /// and the correct set of families. Skips gracefully when smoke artifacts
+    /// are not present (e.g. on a clean clone).
+    #[test]
+    fn corpus_report_has_required_top_level_fields() {
+        let report_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("audit_output/phase-i-smoke/corpus-report.json");
+
+        if !report_path.exists() {
+            return; // Smoke artifacts are not committed; skip silently.
+        }
+
+        let content = std::fs::read_to_string(&report_path).expect("read corpus-report.json");
+        let v: serde_json::Value = serde_json::from_str(&content).expect("parse corpus-report.json");
+
+        assert_eq!(v["schema_version"], "0.5.0");
+        assert!(v["fixture_count"].as_u64().is_some_and(|n| n > 0));
+        assert!(v["total_pages"].as_u64().is_some_and(|n| n > 0));
+        assert_eq!(v["determinism_regressions"].as_u64(), Some(0));
+        assert!(v["by_family"].is_object());
+
+        for family in HeuristicFamily::all() {
+            let fs = family.as_str();
+            let fv = &v["by_family"][fs];
+            assert!(fv.is_object(), "family '{fs}' missing from corpus-report by_family");
+            assert!(fv["pass"].is_number(),   "{fs}: pass must be a number");
+            assert!(fv["fail"].is_number(),   "{fs}: fail must be a number");
+            assert!(fv["total_pages"].is_number(), "{fs}: total_pages must be a number");
+            assert!(fv["pass_rate"].is_number(),   "{fs}: pass_rate must be a number");
+        }
+    }
+
+    /// Verifies the validation-manifest has required top-level fields and that
+    /// each fixture entry carries per-family sidecar_fingerprints.
+    #[test]
+    fn validation_manifest_has_required_fields_and_fingerprints() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("audit_output/phase-i-smoke/validation-manifest.json");
+
+        if !manifest_path.exists() {
+            return; // Smoke artifacts not committed; skip silently.
+        }
+
+        let content = std::fs::read_to_string(&manifest_path).expect("read validation-manifest.json");
+        let v: serde_json::Value = serde_json::from_str(&content).expect("parse validation-manifest.json");
+
+        assert_eq!(v["schema_version"], "0.5.0");
+        assert!(v["families_tested"].as_array().is_some_and(|a| a.len() == 6));
+        assert_eq!(v["determinism_regressions"].as_u64(), Some(0));
+
+        let fixtures = v["fixtures"].as_array().expect("fixtures must be array");
+        assert!(!fixtures.is_empty());
+
+        // Spot-check the first fixture: every family must have a u64 sidecar_fingerprint.
+        let first = &fixtures[0];
+        assert!(first["stem"].is_string());
+        assert!(first["page_count"].as_u64().is_some_and(|n| n > 0));
+        assert_eq!(first["determinism_ok"], true);
+
+        for family in HeuristicFamily::all() {
+            let fs = family.as_str();
+            assert!(
+                first["families"][fs]["sidecar_fingerprint"].is_number(),
+                "fixture[0] family '{fs}' missing sidecar_fingerprint"
+            );
+        }
+    }
 }

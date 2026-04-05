@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 1.7.0  
-**Date:** April 4, 2026  
+**Version:** 1.9.0
+**Date:** April 5, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -35,17 +35,19 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 0.5 Phase C: `PdfiumExtractor::extract_page()` implemented with real pdfium-render calls; returns `PageData` with `Vec<SpanData>`, `RawBBox`, and page dimensions. G-004 closed.
 - Phase 0.5 Phase D: Shared pattern model (`tools/src/pattern_model.rs`) defines `PatternSpec`, `HeuristicFamily` (6 variants), `RegionBand`, `NormalizedBBox`, `MatchEvidence`, `MatchedSpan`, `FailureCode`, `SourceTag` with locked sidecar schema version `0.5.0`.
 - Phase 0.5 Phase E: `pattern-dev test-pattern` loop implemented with real per-page detection via PDFium `FPDFText` pipeline (transparent Form XObject descent); `footer-section-id` validated at 556/571 PASS on a 571-page AEC spec set. `validate-corpus --dry-run` confirms 27-fixture Tier 1 inventory.
+- Phase 0.5 Phase F: Deterministic overlay PNGs (green/amber/red by confidence band) and per-page sidecar provenance fields complete. Schema version `0.5.0` locked.
+- Phase 0.5 Phase G: Schema-complete sidecars for `title-block-anchor` (with partial runtime corner detector), `roi-candidate`, `spec-heading` (source=schema-only). 16/16 unit tests.
+- Phase 0.5 Phase H: Six contract modules in `crates/contracts/src/` defining all downstream contract shapes. 24/24 unit tests. No runtime wiring — contract-only by design.
+- Phase 0.5 Phase I: `validate-corpus` real detection loop implemented. Two confirmed runs: 27 Tier 1 fixtures, 2,892 pages, 0 errors, 0 determinism regressions. Artifacts in `audit_output/phase-i-smoke/`.
+- Phase 0.5 Phase J: 32 unit tests + 5 integration tests added for `fnv1a_64`, `FamilyPageCounts`, `score_matches`, artifact naming, manifest schema, dry-run semantics, holdout rejection, golden-path sidecar, and byte-determinism. All passing; clippy clean.
+- Phase 0.5 Phase K: Downstream handoff document published at `docs/PHASE_05_HANDOFF.md`. Covers `pattern-dev` workflow, locked sidecar schema, extended evidence payloads, all six contract boundaries, runtime-ready vs. contract-only surface map, and priority band assignments for gaps G-001–G-039.
+- Phase 0.5 Phase L: Final verification complete. Definition-of-done confirmed: both binaries build and clippy-clean; workspace-wide `cargo test` exits 0; `classify-pdf` and `pattern-dev` smoke-tested on representative Tier 1 fixtures; PASS/FAIL sidecars carry all required v0.5.0 fields; schema-only families emit `source=schema-only`; `validate-corpus --dry-run` lists 27 fixtures and writes no files; all contract modules carry `**CONTRACT-ONLY**` markers. **Phase 0.5 is CLOSED.**
 
 ## Next Focus
 
-- Phase 0.5 Phase F: Render deterministic overlay PNGs (green/yellow/red bbox by confidence band) and finalize per-page sidecar provenance fields.
-- Phase 0.5 Phase G: Schema-complete sidecars for `title-block-anchor`, `roi-candidate`, `spec-heading` (source=schema-only).
-- Phase 0.5 Phase H: Draft downstream contracts (NormalizedIntakeBundle, ROI sidecar, schedule schema, correction manifest, etc.).
-- Phase 0.5 Phase I: `validate-corpus` real detection loop over Tier 1/Tier 2 with determinism checks and aggregate manifest.
-- Close G-002: implement `Processor::process()` with coordinate normalization and validate_transcript call.
-- Close G-003: implement CLI argument parsing in `main.rs` to orchestrate the full pipeline.
-- Close G-005: wire PDF extraction output to IR span conversion in shared engine.
-- Close G-009: replace manual transcript construction in end-to-end test with real PDF fixture invocation.
+- **Phase 0.5 is CLOSED.** No re-opening of design questions from this phase.
+- **Band 0 critical path** — close G-001 (`Extractor::extract()`), G-002 (`Processor::process()`), G-003 (CLI orchestration), G-005 (PDF→IR span wiring), G-009 (E2E test with real PDF).
+- Band 1 entry point: use Phase I sidecar trees in `audit_output/phase-i-smoke/` as the iteration corpus for G-018/G-019 (title-block table scoring), G-011 (ROI ranking), G-022 (spec heading), G-013/G-014 (Intake Triage).
 
 ## Evidence-Linked Assertions
 
