@@ -30,7 +30,6 @@ fn fixture_path(filename: &str) -> PathBuf {
 
 /// Test 1: Load PDF successfully using `PdfiumExtractor`
 #[test]
-#[ignore = "requires PDFium shared library at runtime; set PDFIUM_LIB_PATH or run with a local PDFium binary"]
 fn test_e2e_loads_pdf_successfully() {
     let fixture_path = fixture_path("simple.pdf");
 
@@ -53,7 +52,6 @@ fn test_e2e_loads_pdf_successfully() {
 
 /// Test 2: Extract text from all pages of PDF
 #[test]
-#[ignore = "requires PDFium shared library at runtime; set PDFIUM_LIB_PATH or run with a local PDFium binary"]
 fn test_e2e_extracts_text_from_pdf() {
     let fixture_path = fixture_path("simple.pdf");
 

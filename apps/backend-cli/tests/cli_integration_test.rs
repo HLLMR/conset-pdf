@@ -6,17 +6,17 @@
 //! visualize round-trip works across the corpus.
 //!
 //! Prerequisites: `cargo build --bin backend-cli` and PDFIUM_LIB_PATH set.
-//! All tests are gated on the binary and fixture existing; they skip gracefully
-//! if either is absent rather than panicking.
 
 use std::path::PathBuf;
 use std::process::Command;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Workspace root: CARGO_MANIFEST_DIR is `apps/backend-cli`, so go up two levels.
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
+        .parent() // apps/
+        .and_then(|p| p.parent()) // workspace root
         .expect("workspace root")
         .to_path_buf()
 }
@@ -38,7 +38,11 @@ fn backend_cli_exe_path() -> PathBuf {
 }
 
 fn tmp_dir(label: &str) -> PathBuf {
-    let dir = repo_root().join("target").join("tmp").join("cli-integration").join(label);
+    let dir = repo_root()
+        .join("target")
+        .join("tmp")
+        .join("cli-integration")
+        .join(label);
     std::fs::create_dir_all(&dir).expect("create tmp dir");
     dir
 }
@@ -47,7 +51,10 @@ fn tmp_dir(label: &str) -> PathBuf {
 /// Returns the parsed `WorkflowResponse` JSON.
 fn run_extract(pdf: &PathBuf, out_json: &PathBuf) -> serde_json::Value {
     let exe = backend_cli_exe_path();
-    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(
+        exe.exists(),
+        "backend-cli not found — run: cargo build --bin backend-cli"
+    );
     assert!(pdf.exists(), "fixture PDF not found: {}", pdf.display());
 
     let output = Command::new(&exe)
@@ -93,9 +100,15 @@ fn run_visualize(transcript_json: &PathBuf, out_dir: &PathBuf) -> serde_json::Va
     serde_json::from_str(&stdout).expect("stdout must be valid JSON WorkflowResponse")
 }
 
-/// Assert the standard WorkflowResponse envelope fields are present.
+/// Assert the standard `WorkflowResponse` envelope fields are present.
 fn assert_envelope(resp: &serde_json::Value) {
-    for field in &["request_id", "session_id", "operation_id", "contracts_version", "result"] {
+    for field in &[
+        "request_id",
+        "session_id",
+        "operation_id",
+        "contracts_version",
+        "result",
+    ] {
         assert!(resp.get(field).is_some(), "missing envelope field: {field}");
     }
     let result = &resp["result"];
@@ -121,13 +134,20 @@ fn assert_extract_ok(resp: &serde_json::Value) -> usize {
 /// Assert visualize succeeded and at least one PNG was written to `out_dir`.
 fn assert_visualize_ok(resp: &serde_json::Value, out_dir: &PathBuf) {
     let status = resp["result"]["status"].as_str().unwrap_or("");
-    assert_eq!(status, "succeeded", "visualize status was not succeeded: {resp}");
+    assert_eq!(
+        status, "succeeded",
+        "visualize status was not succeeded: {resp}"
+    );
     let png_count = std::fs::read_dir(out_dir)
         .expect("visualize output dir missing")
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
         .count();
-    assert!(png_count > 0, "visualize produced no PNG files in {}", out_dir.display());
+    assert!(
+        png_count > 0,
+        "visualize produced no PNG files in {}",
+        out_dir.display()
+    );
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -156,7 +176,10 @@ fn cli_extract_and_visualize_simple_pdf() {
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "png"))
         .count();
-    assert_eq!(png_count, pages, "PNG count should match extracted page count");
+    assert_eq!(
+        png_count, pages,
+        "PNG count should match extracted page count"
+    );
 }
 
 /// Spec document — multi-page CSI-format spec sheet.
@@ -171,11 +194,13 @@ fn cli_extract_and_visualize_spec_pdf() {
     assert_envelope(&extract_resp);
     assert_extract_ok(&extract_resp);
 
-    // SPEC document: transcript must deserialize cleanly and have many pages.
+    // Transcript must have many pages.
     let transcript_text = std::fs::read_to_string(&json).expect("read transcript");
     let transcript: serde_json::Value =
         serde_json::from_str(&transcript_text).expect("transcript must be valid JSON");
-    let page_array = transcript["pages"].as_array().expect("transcript.pages must be array");
+    let page_array = transcript["pages"]
+        .as_array()
+        .expect("transcript.pages must be array");
     assert!(
         page_array.len() > 10,
         "SPEC fixture should have many pages, got {}",
@@ -242,7 +267,10 @@ fn cli_extract_and_visualize_sub_pdf() {
 #[test]
 fn cli_extract_dry_run_succeeds_without_writing_output() {
     let exe = backend_cli_exe_path();
-    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(
+        exe.exists(),
+        "backend-cli not found — run: cargo build --bin backend-cli"
+    );
 
     let pdf = tier1("simple.pdf");
     assert!(pdf.exists(), "simple.pdf fixture missing");
@@ -274,10 +302,11 @@ fn cli_extract_dry_run_succeeds_without_writing_output() {
 #[test]
 fn cli_visualize_dry_run_succeeds_without_writing_output() {
     let exe = backend_cli_exe_path();
-    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(
+        exe.exists(),
+        "backend-cli not found — run: cargo build --bin backend-cli"
+    );
 
-    // Re-use simple.pdf transcript from the simple smoke test if already written,
-    // otherwise extract it first.
     let tmp = tmp_dir("vis-dry-run");
     let pdf = tier1("simple.pdf");
     assert!(pdf.exists(), "simple.pdf fixture missing");
@@ -304,5 +333,48 @@ fn cli_visualize_dry_run_succeeds_without_writing_output() {
     let resp: serde_json::Value =
         serde_json::from_str(&stdout).expect("visualize dry-run stdout must be JSON");
     assert_eq!(resp["result"]["status"], "succeeded");
-    assert!(!vis_dir.exists(), "visualize dry-run must not create output directory");
+    assert!(
+        !vis_dir.exists(),
+        "visualize dry-run must not create output directory"
+    );
+}
+
+/// Coordinate correctness: headers must appear near the top of the page (Y < 0.3)
+/// and footers near the bottom (Y > 0.7) in normalised top-left coordinates.
+/// Verified against SPEC_RWB_LHHS_ALL_ORG.pdf whose first page has a visible
+/// firm header and a section-ID footer.
+#[test]
+fn cli_extract_spec_coordinates_not_inverted() {
+    let tmp = tmp_dir("coord-check");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let json = tmp.join("transcript.json");
+
+    run_extract(&pdf, &json);
+
+    let text = std::fs::read_to_string(&json).expect("read transcript");
+    let transcript: serde_json::Value =
+        serde_json::from_str(&text).expect("transcript must be JSON");
+
+    let page0 = &transcript["pages"][0];
+    let spans = page0["spans"].as_array().expect("page 0 must have spans");
+    assert!(!spans.is_empty(), "page 0 must have at least one span");
+
+    // The first span (sorted by Y then X) must be near the top of the page.
+    // After normalization: Y=0.0 is the top, Y=1.0 is the bottom.
+    let first_y = spans[0]["bbox"]["y"].as_f64().unwrap_or(f64::MAX);
+    assert!(
+        first_y < 0.3,
+        "First span on page 0 has Y={first_y:.4} — expected near page top (Y < 0.3). \
+         Coordinate system may be inverted."
+    );
+
+    // The last span must be nearer the bottom than the first.
+    let last_y = spans
+        .last()
+        .and_then(|s| s["bbox"]["y"].as_f64())
+        .unwrap_or(0.0);
+    assert!(
+        last_y > first_y,
+        "Last span Y={last_y:.4} should be greater than first span Y={first_y:.4}"
+    );
 }

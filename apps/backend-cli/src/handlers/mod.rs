@@ -9,6 +9,7 @@
 pub mod extract;
 pub mod parse;
 pub mod segment;
+pub mod visualize;
 
 use conset_pdf_audit::AuditBundle;
 use conset_pdf_contracts::{
@@ -21,6 +22,7 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::Extract => extract::run(req, bundle),
         WorkflowOperation::Segment => segment::run(req, bundle),
         WorkflowOperation::Parse => parse::run(req, bundle),
+        WorkflowOperation::Visualize => visualize::run(req, bundle),
         _ => not_implemented(req, bundle),
     }
 }

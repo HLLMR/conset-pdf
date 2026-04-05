@@ -560,6 +560,7 @@ dependencies = [
  "conset-pdf-audit",
  "conset-pdf-contracts",
  "conset-pdf-engine",
+ "conset-pdf-ir",
  "serde_json",
 ]
 

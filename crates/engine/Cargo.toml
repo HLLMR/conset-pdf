@@ -14,8 +14,8 @@ workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 conset-pdf-ir = { workspace = true }
+conset-pdf-extraction = { workspace = true }
 log.workspace = true
 env_logger.workspace = true
 
 [dev-dependencies]
-conset-pdf-extraction = { workspace = true }

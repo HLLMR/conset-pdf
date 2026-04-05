@@ -43,16 +43,14 @@ pub struct Validator;
 impl Validator {
     /// Validates a layout transcript.
     ///
+    /// Delegates to [`validate_transcript`] and maps any [`ValidationError`] to a
+    /// human-readable `String` for callers that do not need the structured error type.
+    ///
     /// # Errors
     ///
-    /// Returns an error message when validation fails.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` if the transcript is valid, or an error message if validation fails.
-    pub fn validate(_transcript: &crate::LayoutTranscript) -> Result<(), String> {
-        // Validation logic to be implemented
-        Ok(())
+    /// Returns a descriptive error string when any IR invariant is violated.
+    pub fn validate(transcript: &crate::LayoutTranscript) -> Result<(), String> {
+        validate_transcript(transcript).map_err(|e| e.to_string())
     }
 }
 

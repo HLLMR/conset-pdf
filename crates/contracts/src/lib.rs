@@ -88,6 +88,8 @@ pub enum WorkflowOperation {
     FixBookmarks,
     Detect,
     SpecsPatch,
+    /// Render a `LayoutTranscript` JSON as per-page PNG overlays for layout inspection.
+    Visualize,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

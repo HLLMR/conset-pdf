@@ -22,6 +22,7 @@ pub mod error;
 pub mod extractor;
 pub mod pipeline;
 pub mod processor;
+pub mod visualize;
 
 pub use error::EngineError;
 pub use extractor::Extractor;

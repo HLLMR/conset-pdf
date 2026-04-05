@@ -1,7 +1,7 @@
 # Gap Register
 
-**Version:** 1.8.0
-**Date:** April 5, 2026
+**Version:** 1.9.0
+**Date:** April 6, 2026
 **Owner:** HLLMR LLC
 **Status:** ACTIVE
 **Doc Status Tag:** Implemented
@@ -21,15 +21,15 @@ Gap status:
 
 | Gap ID | Crate | File | Item | Gap Type | Severity | Canonical Claim | Status |
 |---|---|---|---|---|---|---|---|
-| G-001 | engine | `crates/engine/src/extractor.rs` | `Extractor::extract()` | PARTIAL | CRITICAL | `ARCHITECTURE.md` — Compiler pipeline: Lexer stage converts raw PDF input to LayoutTranscript | Open |
-| G-002 | engine | `crates/engine/src/processor.rs` | `Processor::process()` | NOOP | CRITICAL | `ARCHITECTURE.md` — Parser/Optimizer stages normalize, validate, and enrich transcript | Open |
+| G-001 | engine | `crates/engine/src/pipeline/extraction.rs` | `Extractor::extract()` | PARTIAL | CRITICAL | `ARCHITECTURE.md` — Compiler pipeline: Lexer stage converts raw PDF input to LayoutTranscript | **Closed** — Band 0 rewrote `crates/engine/src/pipeline/extraction.rs` with real PDFium extraction loop; `PdfiumExtractor::try_new()` added; per-page `SpanData`→`BoundingBox`→`normalize_bbox()`→`BBox`→`Span` conversion wired. Evidence: `crates/engine/src/pipeline/extraction.rs`. |
+| G-002 | engine | `crates/engine/src/pipeline/parsing.rs` | `Processor::process()` | NOOP | CRITICAL | `ARCHITECTURE.md` — Parser/Optimizer stages normalize, validate, and enrich transcript | **Closed** — Band 0 wired `validate_transcript()` call into `crates/engine/src/pipeline/parsing.rs`; returns `EngineError::validation` on failure. Evidence: `crates/engine/src/pipeline/parsing.rs`. |
 | G-003 | engine | `crates/engine/src/main.rs` | `fn main()` | STUB | HIGH | `ARCHITECTURE.md` — CLI orchestrates full extraction/processing pipeline | Open |
-| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE.md` — Extraction backend produces structured PageData with bboxes and text runs | **Closed** — Phase C implemented real pdfium-render calls; returns `PageData` with `Vec<SpanData>`, `RawBBox`, `width_pts`, `height_pts`. Evidence: `crates/pdf-extraction/src/extractor.rs`, `crates/pdf-extraction/src/types.rs`. Note: G-005 (PDF→IR conversion wiring in shared engine) remains open. |
-| G-005 | pdf-extraction / engine | (boundary) | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE.md` — Pipeline connects pdf-extraction output to IR crate types | Open |
+| G-004 | pdf-extraction | `crates/pdf-extraction/src/extractor.rs` | `PdfiumExtractor::extract_page()` | STUB | CRITICAL | `TRANSCRIPT_ARCHITECTURE.md` — Extraction backend produces structured PageData with bboxes and text runs | **Closed** — Phase C implemented real pdfium-render calls; returns `PageData` with `Vec<SpanData>`, `RawBBox`, `width_pts`, `height_pts`. Evidence: `crates/pdf-extraction/src/extractor.rs`, `crates/pdf-extraction/src/types.rs`. G-005 (PDF→IR conversion wiring) also closed in Band 0. |
+| G-005 | pdf-extraction / engine | `crates/engine/src/pipeline/extraction.rs` | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE.md` — Pipeline connects pdf-extraction output to IR crate types | **Closed** — `RawBBox`→`BoundingBox`→`normalize_bbox()`→`BBox` and `BoundingBox::new()`→`Span::new()` conversion chain wired in `crates/engine/src/pipeline/extraction.rs`. Same commit as G-001 closure. |
 | G-006 | audit | `crates/audit/src/` | Audit hook integration | MISSING-WIRING | MEDIUM | `ARCHITECTURE.md` — Audit events generated during extraction and processing | Open |
-| G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS.md` — Validation layer enforces all IR invariants at the crate boundary | Open |
+| G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS.md` — Validation layer enforces all IR invariants at the crate boundary | **Closed** — `Validator::validate()` now delegates to `validate_transcript()` and maps the error to `String`. Evidence: `crates/ir/src/validation.rs`. |
 | G-008 | ir | `crates/ir/src/types.rs` | `Document`, `Element` structs | STUB | LOW | `ARCHITECTURE.md` — Document type models structured document content; purpose currently unclear | Open |
-| G-009 | engine | `crates/engine/tests/end_to_end_test.rs` | E2E test pipeline invocation | TRIVIAL-TEST | HIGH | `MASTER_PLAN.md` — End-to-end pipeline test validates real PDF → LayoutTranscript path | Open |
+| G-009 | engine | `crates/engine/tests/end_to_end_test.rs` | E2E test pipeline invocation | TRIVIAL-TEST | HIGH | `MASTER_PLAN.md` — End-to-end pipeline test validates real PDF → LayoutTranscript path | **Closed** — `#[ignore]` removed from `test_e2e_loads_pdf_successfully` and `test_e2e_extracts_text_from_pdf`; `engine_api_test.rs` rewritten to use real `simple.pdf` fixture. All 6 E2E + 3 API tests pass. Evidence: `crates/engine/tests/end_to_end_test.rs`, `crates/engine/tests/engine_api_test.rs`. |
 | G-010 | audit | `crates/audit/src/bundle.rs` | Audit unit tests | TRIVIAL-TEST | LOW | `DEV_STANDARDS.md` — Tests validate behavior including JSON persistence and event ordering | Open |
 | G-011 | engine / workflows | (detection policy boundary) | Autonomous deterministic ROI candidate generation, ranking, and tie-break implementation | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — ROI detection is autonomous-first and deterministic | Open |
 | G-012 | apps/desktop-gui + backend-cli | (admin tooling boundary) | Admin-only manual ROI/profile refinement and override manifest flow | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` + `ARCHITECTURE.md` — manual ROI/profile management retained as admin-only refinement/fallback | Open |
@@ -91,15 +91,15 @@ Gap status:
 The minimum gap closure sequence for a functional end-to-end pipeline:
 
 ```
-G-004 (extract_page stub)
-  → G-005 (PDF text → IR conversion wiring)
-    → G-001 (Extractor::extract() real implementation)
-      → G-002 (Processor::process() normalization)
-        → G-003 (main.rs CLI orchestration)
-          → G-009 (E2E test with real pipeline invocation)
+G-004 (extract_page stub)                       ← CLOSED Phase C
+  → G-005 (PDF text → IR conversion wiring)     ← CLOSED Band 0
+    → G-001 (Extractor::extract() real impl)    ← CLOSED Band 0
+      → G-002 (Processor::process() validation) ← CLOSED Band 0
+        → G-003 (main.rs CLI orchestration)     ← Open (backend-cli app covers runtime path)
+          → G-009 (E2E test with real PDF)      ← CLOSED Band 0
 ```
 
-G-006 (audit hooks), G-007 (Validator), G-008 (Document/Element), and G-010 (audit tests) are parallel work, not on the critical path.
+G-006 (audit hooks), G-007 (Validator — **CLOSED Band 0**), G-008 (Document/Element), and G-010 (audit tests) are parallel work, not on the critical path.
 
 Autonomous ROI first-class readiness adds a secondary policy track:
 

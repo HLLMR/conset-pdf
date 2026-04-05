@@ -880,11 +880,11 @@ Every extraction/decision includes a confidence score (0.0–1.0):
 ### Dependency Graph
 
 ```
-Phase 0: Scaffolding (Week 1)
+Phase 0: Scaffolding (Week 1) ← COMPLETE
     ↓
-Phase 0.5: Pattern Dev Tool (Weeks 2-3) ← CRITICAL EARLY BUILD
+Phase 0.5: Pattern Dev Tool (Weeks 2-3) ← COMPLETE
     ↓
-Phase 1: Layout Extraction (Weeks 4-5)
+Phase 1: Layout Extraction (Weeks 4-5) ← COMPLETE
     ↓
 Phase 2: Furniture/Sections (Weeks 6-7) ← Uses Pattern Dev Tool
     ↓
@@ -1027,12 +1027,12 @@ Page 2:
 **Goal:** Get normalized layout extraction working end-to-end.
 
 **Deliverables:**
-- ☐ LayoutTranscript types defined
-- ☐ PDFium text extraction with bbox coordinates
-- ☐ Coordinate normalization (PDF bottom-left → display top-left)
-- ☐ Invariant validation (no negative sizes, out-of-bounds, etc.)
-- ☐ Debug visualization (draw bboxes on page images)
-- ☐ Integration tests on 5 sample PDFs
+- ✅ LayoutTranscript types defined
+- ✅ PDFium text extraction with bbox coordinates
+- ✅ Coordinate normalization (PDF bottom-left → display top-left)
+- ✅ Invariant validation (no negative sizes, out-of-bounds, etc.)
+- ✅ Debug visualization (draw bboxes on page images)
+- ✅ Integration tests on 5 sample PDFs
 
 **Test:**
 ```bash
@@ -1043,10 +1043,10 @@ cargo run -- visualize transcript.json -o debug/
 **Output:** `debug/page-000.png` with bboxes drawn, coordinate system verified.
 
 **Definition of Done:** 
-- Transcript JSON output is clean and normalized
-- All 5 test PDFs extract successfully
-- No coordinate inversions (headers at top, footers at bottom)
-- All invariants pass
+- ✅ Transcript JSON output is clean and normalized
+- ✅ All 5 test PDFs extract successfully
+- ✅ No coordinate inversions (headers at top, footers at bottom)
+- ✅ All invariants pass
 
 ---
 
@@ -1408,12 +1408,12 @@ cargo run -- apply-addendum \
 
 ### Phase 1 (Weeks 4-5): Definition of Done
 **Clean JSON output + document AST.**
-- Section segmentation works on 10 torture PDFs
-- Coordinate system normalized correctly
-- All invariants pass
-- Debug visualization shows correct regions
+- ✅ Section segmentation works on 10 torture PDFs
+- ✅ Coordinate system normalized correctly
+- ✅ All invariants pass
+- ✅ Debug visualization shows correct regions
 
-**Success Metric:** Can extract and visualize layout from any spec PDF.
+**Success Metric:** Can extract and visualize layout from any spec PDF. ✅ COMPLETE
 
 ---
 
@@ -1829,10 +1829,10 @@ Before merging any code:
 - Documentation includes pattern dev guide
 
 ### Phase 1 Success
-- Can extract layout from 100% of torture corpus
-- Coordinate system normalized correctly (no inversions)
-- All invariants pass
-- Debug visualization shows correct regions
+- ✅ Can extract layout from 100% of torture corpus
+- ✅ Coordinate system normalized correctly (no inversions)
+- ✅ All invariants pass
+- ✅ Debug visualization shows correct regions
 
 ### Alpha Success (Phase 7)
 - Your team uses it for real work (supervised)

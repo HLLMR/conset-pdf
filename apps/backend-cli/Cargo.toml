@@ -16,9 +16,13 @@ path = "src/main.rs"
 
 [dependencies]
 conset-pdf-engine.workspace = true
+conset-pdf-ir.workspace = true
 conset-pdf-contracts.workspace = true
 conset-pdf-audit.workspace = true
 clap.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

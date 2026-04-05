@@ -35,8 +35,7 @@ struct Cli {
     command: Commands,
 }
 
-/// Available operations.  Argument validation is active; execution is stubbed
-/// until Phase 1 wires the full pipeline.
+/// Available operations.
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Extract a layout transcript from a PDF file.
@@ -48,6 +47,18 @@ enum Commands {
         #[arg(short, long)]
         output: Option<String>,
         /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Render per-page PNG overlays from a transcript JSON (layout inspection).
+    Visualize {
+        /// Path to the input transcript JSON (produced by `extract`).
+        #[arg(short, long)]
+        input: String,
+        /// Output directory for overlay PNGs.
+        #[arg(short, long)]
+        output: String,
+        /// Validate arguments only; skip all rendering.
         #[arg(long)]
         dry_run: bool,
     },
@@ -106,6 +117,9 @@ fn main() -> Result<()> {
     let (operation, input_path, output_path, dry_run) = match &cli.command {
         Commands::Extract { input, output, dry_run } => {
             (WorkflowOperation::Extract, input.clone(), output.clone(), *dry_run)
+        }
+        Commands::Visualize { input, output, dry_run } => {
+            (WorkflowOperation::Visualize, input.clone(), Some(output.clone()), *dry_run)
         }
         Commands::Segment { input, output, dry_run } => {
             (WorkflowOperation::Segment, input.clone(), output.clone(), *dry_run)

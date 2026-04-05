@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 1.9.0
-**Date:** April 5, 2026
+**Version:** 2.1.0
+**Date:** April 6, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -42,12 +42,13 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 0.5 Phase J: 32 unit tests + 5 integration tests added for `fnv1a_64`, `FamilyPageCounts`, `score_matches`, artifact naming, manifest schema, dry-run semantics, holdout rejection, golden-path sidecar, and byte-determinism. All passing; clippy clean.
 - Phase 0.5 Phase K: Downstream handoff document published at `docs/PHASE_05_HANDOFF.md`. Covers `pattern-dev` workflow, locked sidecar schema, extended evidence payloads, all six contract boundaries, runtime-ready vs. contract-only surface map, and priority band assignments for gaps G-001–G-039.
 - Phase 0.5 Phase L: Final verification complete. Definition-of-done confirmed: both binaries build and clippy-clean; workspace-wide `cargo test` exits 0; `classify-pdf` and `pattern-dev` smoke-tested on representative Tier 1 fixtures; PASS/FAIL sidecars carry all required v0.5.0 fields; schema-only families emit `source=schema-only`; `validate-corpus --dry-run` lists 27 fixtures and writes no files; all contract modules carry `**CONTRACT-ONLY**` markers. **Phase 0.5 is CLOSED.**
+- Phase 1 Band 0: G-001, G-002, G-005, G-007, G-009 all closed. Real PDFium extraction wired in `crates/engine/src/pipeline/extraction.rs` (`SpanData`→`BoundingBox`→`normalize_bbox()`→`BBox`→`Span`); `validate_transcript()` called in `pipeline/parsing.rs`; `Validator::validate()` delegates to `validate_transcript()`; extract handler writes transcript JSON to `--output`; `visualize` subcommand added to `backend-cli` (`crates/engine/src/visualize.rs`, `apps/backend-cli/src/handlers/visualize.rs`); E2E + API tests enabled and passing (9/9).
+- Phase 1 complete: 8/8 CLI integration tests pass across SPEC, DWG, NAR, SUB, and simple fixtures; coordinate system verified (no axis inversion); `source_path` canonicalized to absolute path at extraction time. Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 
 ## Next Focus
 
-- **Phase 0.5 is CLOSED.** No re-opening of design questions from this phase.
-- **Band 0 critical path** — close G-001 (`Extractor::extract()`), G-002 (`Processor::process()`), G-003 (CLI orchestration), G-005 (PDF→IR span wiring), G-009 (E2E test with real PDF).
-- Band 1 entry point: use Phase I sidecar trees in `audit_output/phase-i-smoke/` as the iteration corpus for G-018/G-019 (title-block table scoring), G-011 (ROI ranking), G-022 (spec heading), G-013/G-014 (Intake Triage).
+- **Phase 1 is COMPLETE.**
+- **Phase 2 entry points (Band 1):** G-018/G-019 (title-block table scoring and deterministic corner tie-break), G-011 (autonomous ROI ranking), G-022 (spec heading detector), G-013/G-014 (Intake Triage bundle contract + addenda ordering). Use Phase I sidecar trees in `audit_output/phase-i-smoke/` as the iteration corpus.
 
 ## Evidence-Linked Assertions
 

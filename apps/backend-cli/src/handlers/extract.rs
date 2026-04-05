@@ -46,21 +46,47 @@ pub fn run(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResponse 
     let extract_result = Extractor::new().extract(&req.input_path);
 
     // ── Engine → contracts ────────────────────────────────────────────────────
-    let (status, summary, error_code) = match &extract_result {
-        Ok(transcript) => (
-            OperationStatus::Succeeded,
-            format!("Extracted {} page(s) from \"{}\"", transcript.page_count(), req.input_path),
-            None,
-        ),
+    let (status, summary, warnings, error_code) = match &extract_result {
+        Ok(transcript) => {
+            let page_count = transcript.page_count();
+            let mut w: Vec<String> = Vec::new();
+
+            // Write transcript JSON to output file when --output is given.
+            if let Some(out_path) = &req.output_path {
+                match serde_json::to_string_pretty(transcript) {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(out_path, &json) {
+                            w.push(format!("Failed to write transcript to '{out_path}': {e}"));
+                        }
+                    }
+                    Err(e) => {
+                        w.push(format!("Failed to serialize transcript: {e}"));
+                    }
+                }
+            }
+
+            let status = if w.is_empty() {
+                OperationStatus::Succeeded
+            } else {
+                OperationStatus::SucceededWithWarnings
+            };
+            (
+                status,
+                format!("Extracted {page_count} page(s) from \"{}\"", req.input_path),
+                w,
+                None,
+            )
+        }
         Err(e) => (
             OperationStatus::Failed,
             format!("Extraction failed: {e}"),
+            vec![],
             Some("EXTRACTION_ERROR".to_owned()),
         ),
     };
 
     record_ended(bundle, req, &started_at, status.clone());
-    make_response(req, status, summary, vec![], error_code)
+    make_response(req, status, summary, warnings, error_code)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

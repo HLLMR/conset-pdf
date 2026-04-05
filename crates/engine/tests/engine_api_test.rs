@@ -6,52 +6,48 @@
 //! before the change is accepted.
 
 use conset_pdf_engine::{Extractor, Processor};
+use std::path::PathBuf;
+
+fn fixture_path(filename: &str) -> String {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.pop(); // engine
+    p.pop(); // crates
+    p.push("tests/corpus/tier1");
+    p.push(filename);
+    p.to_string_lossy().into_owned()
+}
 
 #[test]
 fn extractor_returns_layout_transcript() {
+    let path = fixture_path("simple.pdf");
     let extractor = Extractor::new();
-    // The stub accepts any string; a real path is not required at this stage.
-    let result = extractor.extract("dummy.pdf");
-    assert!(result.is_ok(), "Extractor::extract should succeed for stub path");
-    let transcript = match result {
-        Ok(transcript) => transcript,
-        Err(error) => panic!("Extractor::extract returned error: {error}"),
-    };
-    assert_eq!(transcript.page_count(), 1, "stub transcript must contain exactly one page");
+    let result = extractor.extract(&path);
+    assert!(result.is_ok(), "Extractor::extract should succeed: {:?}", result.err());
+    let transcript = result.unwrap();
+    assert!(transcript.page_count() > 0, "transcript must contain at least one page");
 }
 
 #[test]
 fn processor_preserves_transcript_page_count() {
+    let path = fixture_path("simple.pdf");
     let extractor = Extractor::new();
     let processor = Processor::new();
-    let transcript = match extractor.extract("dummy.pdf") {
-        Ok(transcript) => transcript,
-        Err(error) => panic!("extractor stub should succeed: {error}"),
-    };
+    let transcript = extractor.extract(&path).expect("extract should succeed");
     let expected_pages = transcript.page_count();
 
     let result = processor.process(transcript);
-    assert!(result.is_ok(), "Processor::process should succeed for stub transcript");
-    let processed = match result {
-        Ok(transcript) => transcript,
-        Err(error) => panic!("processor stub should succeed: {error}"),
-    };
-    assert_eq!(processed.page_count(), expected_pages, "processor stub must not alter page count");
+    assert!(result.is_ok(), "Processor::process should succeed: {:?}", result.err());
+    let processed = result.unwrap();
+    assert_eq!(processed.page_count(), expected_pages, "processor must not alter page count");
 }
 
 #[test]
 fn extractor_default_equals_new() {
+    let path = fixture_path("simple.pdf");
     let a = Extractor::new();
     let b = Extractor;
-    // Both should produce the same transcript for the same input.
-    let ta = match a.extract("dummy.pdf") {
-        Ok(transcript) => transcript,
-        Err(error) => panic!("new extractor must succeed: {error}"),
-    };
-    let tb = match b.extract("dummy.pdf") {
-        Ok(transcript) => transcript,
-        Err(error) => panic!("default extractor must succeed: {error}"),
-    };
+    let ta = a.extract(&path).expect("new extractor must succeed");
+    let tb = b.extract(&path).expect("default extractor must succeed");
     assert_eq!(
         ta.page_count(),
         tb.page_count(),
