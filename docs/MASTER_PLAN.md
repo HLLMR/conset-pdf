@@ -888,7 +888,7 @@ Phase 1: Layout Extraction (Weeks 4-5) ← COMPLETE
     ↓
 Phase 2: Furniture/Sections (Weeks 6-7) ← COMPLETE
     ↓
-Phase 3: Paragraph Parsing (Weeks 8-9)
+Phase 3: Paragraph Parsing (Weeks 8-9) ← COMPLETE
     ↓
 Phase 4: Edit Operations (Week 10)
     ↓
@@ -1117,12 +1117,12 @@ cargo run -- visualize-segments test.pdf index.json -o debug/
 **Goal:** Parse sections into hierarchical AST.
 
 **Deliverables:**
-- ☐ Line grouping (baseline clustering)
-- ☐ Paragraph detection
-- ☐ Outline marker parsing (A., 1., a., i.)
-- ☐ Nesting inference (indent-based)
-- ☐ AST construction (Section → Part → Article → Paragraph)
-- ☐ Debug output (AST visualization)
+- ✅ Line grouping (baseline clustering)
+- ✅ Paragraph detection
+- ✅ Outline marker parsing (A., 1., a., i.)
+- ✅ Nesting inference (indent-based)
+- ✅ AST construction (Section → Part → Article → Paragraph)
+- ✅ Debug output (AST visualization)
 
 **Test:**
 ```bash
@@ -1133,11 +1133,11 @@ cargo run -- visualize-ast ast.json -o debug/ast.html
 **Output:** Full hierarchical AST of Section 23 82 16 with correct nesting.
 
 **Definition of Done:**
-- AST accurately represents section structure
-- Outline numbering parsed correctly (2.7.A, 2.7.B, etc.)
-- Nesting levels inferred correctly
-- Part/Article boundaries detected
-- Works on 80% of torture corpus sections
+- ✅ AST accurately represents section structure
+- ✅ Outline numbering parsed correctly (2.7.A, 2.7.B, etc.)
+- ✅ Nesting levels inferred correctly
+- ✅ Part/Article boundaries detected
+- ✅ Works on 80% of torture corpus sections
 
 ---
 

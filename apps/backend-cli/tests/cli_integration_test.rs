@@ -540,6 +540,11 @@ fn cli_segment_and_visualize_segments_spec_pdf() {
     let segment_json = tmp.join("segment-index.json");
     let vis_dir = tmp.join("vis");
 
+    // Clear any PNGs from previous runs so the count is deterministic.
+    if vis_dir.exists() {
+        let _ = std::fs::remove_dir_all(&vis_dir);
+    }
+
     let extract_resp = run_extract(&pdf, &transcript_json);
     let page_count = assert_extract_ok(&extract_resp);
 
@@ -598,5 +603,245 @@ fn cli_visualize_segments_dry_run_succeeds_without_writing_output() {
     assert!(
         !vis_dir.exists(),
         "visualize-segments dry-run must not create output directory"
+    );
+}
+
+// ── Phase 3: Parse + VisualizeAst tests ──────────────────────────────────────
+
+/// Helper: run `backend-cli parse --input <pdf> --output <ast.json>`.
+fn run_parse(pdf: &PathBuf, out_json: &PathBuf) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found");
+    assert!(pdf.exists(), "fixture PDF not found: {}", pdf.display());
+
+    let output = Command::new(&exe)
+        .arg("parse")
+        .arg("--input")
+        .arg(pdf)
+        .arg("--output")
+        .arg(out_json)
+        .output()
+        .expect("failed to spawn backend-cli parse");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "parse exited non-zero for {}:\nstdout: {stdout}\nstderr: {}",
+        pdf.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("parse stdout must be valid JSON WorkflowResponse")
+}
+
+/// Helper: run `backend-cli visualize-ast --input <ast.json> --output <out.html>`.
+fn run_visualize_ast(ast_json: &PathBuf, out_html: &PathBuf) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("visualize-ast")
+        .arg("--input")
+        .arg(ast_json)
+        .arg("--output")
+        .arg(out_html)
+        .output()
+        .expect("failed to spawn backend-cli visualize-ast");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "visualize-ast exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("visualize-ast stdout must be valid JSON")
+}
+
+/// Assert parse succeeded and return the section count from the summary.
+fn assert_parse_ok(resp: &serde_json::Value) -> usize {
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "parse status unexpected: {status}: {resp}"
+    );
+    let summary = resp["result"]["summary"].as_str().unwrap_or("");
+    // Summary: "Parsed N section(s), M outline node(s)"
+    summary
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+/// Parse a SPEC PDF — should detect at least one section and produce outline nodes.
+#[test]
+fn cli_parse_spec_pdf() {
+    let tmp = tmp_dir("parse-spec");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let ast_json = tmp.join("ast.json");
+
+    let resp = run_parse(&pdf, &ast_json);
+    assert_envelope(&resp);
+    assert_parse_ok(&resp);
+
+    assert!(ast_json.exists(), "AST JSON not written");
+
+    let text = std::fs::read_to_string(&ast_json).expect("read AST JSON");
+    let doc: serde_json::Value = serde_json::from_str(&text).expect("AST must be valid JSON");
+
+    assert!(doc.get("source_path").is_some(), "AST missing source_path");
+    assert!(doc.get("sections").is_some(), "AST missing sections");
+
+    let sections = doc["sections"].as_array().expect("sections must be array");
+    assert!(!sections.is_empty(), "SPEC should produce at least one section");
+}
+
+/// Parse a simple PDF — command must succeed even if no CSI sections are found.
+#[test]
+fn cli_parse_simple_pdf() {
+    let tmp = tmp_dir("parse-simple");
+    let pdf = tier1("simple.pdf");
+    let ast_json = tmp.join("ast.json");
+
+    let resp = run_parse(&pdf, &ast_json);
+    assert_envelope(&resp);
+
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "parse must succeed even with no CSI sections: {resp}"
+    );
+    assert!(ast_json.exists(), "AST JSON not written");
+}
+
+/// Parse with --section filter: only the named section should appear in the output.
+#[test]
+fn cli_parse_spec_pdf_with_section_filter() {
+    let tmp = tmp_dir("parse-spec-filter");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let ast_all = tmp.join("ast_all.json");
+    let ast_filtered = tmp.join("ast_filtered.json");
+
+    // First parse without filter to discover a section ID.
+    run_parse(&pdf, &ast_all);
+    let all_text = std::fs::read_to_string(&ast_all).expect("read full AST");
+    let all_doc: serde_json::Value =
+        serde_json::from_str(&all_text).expect("full AST must be JSON");
+    let sections = all_doc["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        // Nothing to filter — skip.
+        return;
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    // Now parse with section filter.
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("parse")
+        .arg("--input")
+        .arg(&pdf)
+        .arg("--output")
+        .arg(&ast_filtered)
+        .arg("--section")
+        .arg(&first_id)
+        .output()
+        .expect("failed to spawn backend-cli parse --section");
+
+    assert!(output.status.success(), "parse --section exited non-zero");
+
+    let filtered_text = std::fs::read_to_string(&ast_filtered).expect("read filtered AST");
+    let filtered_doc: serde_json::Value =
+        serde_json::from_str(&filtered_text).expect("filtered AST must be JSON");
+    let filtered_sections = filtered_doc["sections"].as_array().expect("sections array");
+    assert_eq!(
+        filtered_sections.len(),
+        1,
+        "parse --section should produce exactly 1 section, got {}",
+        filtered_sections.len()
+    );
+    assert_eq!(
+        filtered_sections[0]["section_id"].as_str().unwrap_or(""),
+        first_id.as_str(),
+        "filtered section ID should match the requested ID"
+    );
+}
+
+/// Dry-run parse: must succeed without writing any output file.
+#[test]
+fn cli_parse_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("parse-dry-run");
+    let pdf = tier1("simple.pdf");
+    let sentinel = tmp.join("should_not_exist_ast.json");
+
+    let output = Command::new(&exe)
+        .arg("parse")
+        .arg("--input")
+        .arg(&pdf)
+        .arg("--output")
+        .arg(&sentinel)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli parse --dry-run");
+
+    assert!(output.status.success(), "parse dry-run exited non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("dry-run stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "succeeded");
+    assert!(!sentinel.exists(), "parse dry-run must not write output");
+}
+
+/// Full round-trip: parse SPEC then visualize-ast → HTML file produced.
+#[test]
+fn cli_parse_and_visualize_ast_spec_pdf() {
+    let tmp = tmp_dir("parse-vis-ast-spec");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let ast_json = tmp.join("ast.json");
+    let html_out = tmp.join("ast.html");
+
+    run_parse(&pdf, &ast_json);
+
+    let vis_resp = run_visualize_ast(&ast_json, &html_out);
+    assert_envelope(&vis_resp);
+    assert_eq!(
+        vis_resp["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "visualize-ast must succeed: {vis_resp}"
+    );
+
+    assert!(html_out.exists(), "HTML file not written by visualize-ast");
+
+    let html = std::fs::read_to_string(&html_out).expect("read HTML file");
+    assert!(html.contains("<!DOCTYPE html>"), "output must be valid HTML");
+    assert!(html.contains("<body>"), "output must have a body element");
+}
+
+/// Dry-run visualize-ast: must succeed without writing any file.
+#[test]
+fn cli_visualize_ast_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("vis-ast-dry-run");
+    let pdf = tier1("simple.pdf");
+    let ast_json = tmp.join("ast.json");
+    let sentinel = tmp.join("should_not_exist.html");
+
+    run_parse(&pdf, &ast_json);
+
+    let output = Command::new(&exe)
+        .arg("visualize-ast")
+        .arg("--input")
+        .arg(&ast_json)
+        .arg("--output")
+        .arg(&sentinel)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli visualize-ast --dry-run");
+
+    assert!(output.status.success(), "visualize-ast dry-run exited non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("vis-ast dry-run stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "succeeded");
+    assert!(
+        !sentinel.exists(),
+        "visualize-ast dry-run must not write output file"
     );
 }

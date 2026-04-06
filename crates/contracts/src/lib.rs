@@ -93,6 +93,8 @@ pub enum WorkflowOperation {
     /// Render per-page PNGs with furniture regions (header/footer/body bands) and
     /// section boundaries marked from a `SegmentIndex` JSON.
     VisualizeSegments,
+    /// Render a `ParsedDocument` JSON as a self-contained HTML tree for outline inspection.
+    VisualizeAst,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

@@ -10,6 +10,7 @@ pub mod extract;
 pub mod parse;
 pub mod segment;
 pub mod visualize;
+pub mod visualize_ast;
 pub mod visualize_segments;
 
 use conset_pdf_audit::AuditBundle;
@@ -25,6 +26,7 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::Parse => parse::run(req, bundle),
         WorkflowOperation::Visualize => visualize::run(req, bundle),
         WorkflowOperation::VisualizeSegments => visualize_segments::run(req, bundle),
+        WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),
         _ => not_implemented(req, bundle),
     }
 }

@@ -20,12 +20,14 @@
 //! let transcript = LayoutTranscript::new();
 //! ```
 
+pub mod ast;
 pub mod layout;
 pub mod segment;
 pub mod types;
 pub mod validation;
 
 // Re-export main types for convenience
+pub use ast::{AstNode, OutlineTag, ParsedDocument, SectionAst};
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
 pub use segment::{ChromeMetadata, CoverageStats, SegmentIndex, SectionEntry};
 pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};

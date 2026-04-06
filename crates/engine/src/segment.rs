@@ -24,9 +24,23 @@
 //!   detected / total pages in the section.
 
 use crate::error::{EngineError, Result};
-use conset_pdf_ir::{ChromeMetadata, CoverageStats, LayoutTranscript, SegmentIndex, SectionEntry};
+use conset_pdf_ir::{ChromeMetadata, CoverageStats, LayoutTranscript, SegmentIndex, SectionEntry, Span};
 use regex::Regex;
 use std::sync::OnceLock;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/// Bottom-band Y threshold (normalised, top-left origin).
+/// Set to 0.90 rather than 0.85 so that body text which bleeds slightly
+/// past the nominal body band (y ≈ 0.86-0.89) is excluded from section-ID
+/// detection.  Valid section stamps in this corpus sit at y ≈ 0.943.
+const FOOTER_Y: f64 = 0.90;
+
+/// Maximum normalised-X gap between consecutive footer spans that are still
+/// considered part of the same token cluster.  The date block and section-ID
+/// block are separated by a much larger gap (≥ 0.3), so this threshold
+/// cleanly splits them.
+const FOOTER_CLUSTER_GAP: f64 = 0.06;
 
 // ── Compiled regex patterns (lazily initialised) ──────────────────────────────
 
@@ -38,6 +52,21 @@ fn section_id_re() -> &'static Regex {
 fn page_counter_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?i)\bpage\s+\d+\s+of\s+\d+\b").unwrap())
+}
+
+/// Matches a 4-digit year or any other 4-digit token — used to identify the
+/// date cluster in footer so it can be skipped.
+fn four_digit_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b\d{4}\b").unwrap())
+}
+
+/// Merges adjacent single-digit tokens separated by whitespace into 2-digit
+/// tokens.  Handles PDFium rendering artifacts where a two-digit group like
+/// `00` is split into two adjacent `0` spans (e.g. `"0 0"` → `"00"`).
+fn merge_single_digits_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b(\d)\s(\d)\b").unwrap())
 }
 
 fn project_id_re() -> &'static Regex {
@@ -75,24 +104,23 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
     let mut page_counter_flags: Vec<bool> = Vec::with_capacity(pages.len());
 
     for page in pages {
-        let mut found_id: Option<String> = None;
         let mut found_counter = false;
 
         for span in page.spans() {
             let y = span.bbox.y;
-            // Footer band: bottom 15 % (Y > 0.85)
-            if y > 0.85 {
-                if found_id.is_none() {
-                    if let Some(caps) = section_id_re().captures(&span.text) {
-                        let id = normalise_section_id(&caps);
-                        found_id = Some(id);
-                    }
-                }
-                if !found_counter && page_counter_re().is_match(&span.text) {
-                    found_counter = true;
-                }
+            // Page-counter detection (still per-span — phrase is rarely split).
+            if y > FOOTER_Y && !found_counter && page_counter_re().is_match(&span.text) {
+                found_counter = true;
             }
         }
+        // Section-ID detection: build X-clusters across the footer band so that
+        // digits split across multiple adjacent spans are reassembled.
+        let footer_spans: Vec<&Span> = page
+            .spans()
+            .iter()
+            .filter(|s| s.bbox.y > FOOTER_Y)
+            .collect();
+        let found_id = detect_section_id(&footer_spans);
 
         page_section_ids.push(found_id);
         page_counter_flags.push(found_counter);
@@ -128,6 +156,90 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/// Detect the CSI section-ID from a pre-filtered slice of footer-band spans.
+///
+/// The footer layout for this corpus is:
+/// `[yyyy-mm-dd date]  [NN NN NN section-id]  [– section-name]  [Page N]`
+///
+/// Because the section-ID digits are frequently split across individual spans,
+/// we group spans into X-clusters (consecutive spans within
+/// [`FOOTER_CLUSTER_GAP`] horizontally / same Y-row), then find the first
+/// cluster that:
+/// * does **not** contain a 4-digit year (which would mark the date cluster),
+/// * **does** match the CSI section-ID pattern.
+///
+/// A final pre-processing pass merges adjacent single-digit tokens (`"0 0"` →
+/// `"00"`) to handle split-zero rendering artefacts before pattern matching.
+fn detect_section_id(footer_spans: &[&Span]) -> Option<String> {
+    if footer_spans.is_empty() {
+        return None;
+    }
+
+    // Sort by (y, x) to get reading order.
+    let mut sorted = footer_spans.to_vec();
+    sorted.sort_by(|a, b| {
+        a.bbox.y
+            .partial_cmp(&b.bbox.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(
+                a.bbox.x
+                    .partial_cmp(&b.bbox.x)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+    });
+
+    // Build X-clusters.
+    let mut clusters: Vec<String> = Vec::new();
+    let mut cluster_tokens: Vec<&str> = Vec::new();
+    let mut last_x: f64 = f64::NEG_INFINITY;
+    let mut last_y: f64 = f64::NEG_INFINITY;
+
+    for span in &sorted {
+        let t = span.text.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let x = span.bbox.x;
+        let y = span.bbox.y;
+
+        // A new cluster starts when the Y row changes, the X position jumps
+        // back to the left (new visual row), or the X gap forward is large.
+        let new_cluster = (y - last_y).abs() > 0.01
+            || x < last_x
+            || (x - last_x) > FOOTER_CLUSTER_GAP;
+        if new_cluster && !cluster_tokens.is_empty() {
+            clusters.push(cluster_tokens.join(" "));
+            cluster_tokens.clear();
+        }
+        cluster_tokens.push(t);
+        last_x = x;
+        last_y = y;
+    }
+    if !cluster_tokens.is_empty() {
+        clusters.push(cluster_tokens.join(" "));
+    }
+
+    // Inspect each cluster for a section ID.
+    for cluster in &clusters {
+        // Skip clusters that contain a 4-digit year (date cluster).
+        if four_digit_re().is_match(cluster) {
+            continue;
+        }
+        // Merge adjacent single-digit tokens before pattern matching so that
+        // a split "0 0" becomes "00" and forms a valid 2-digit group.
+        let merged = merge_single_digits_re()
+            .replace_all(cluster, |caps: &regex::Captures| {
+                format!("{}{}", &caps[1], &caps[2])
+            })
+            .into_owned();
+        if let Some(caps) = section_id_re().captures(&merged) {
+            return Some(normalise_section_id(&caps));
+        }
+    }
+
+    None
+}
 
 /// Normalise a section-ID regex capture to canonical form `"NN NN"` or `"NN NN NN"`.
 fn normalise_section_id(caps: &regex::Captures<'_>) -> String {

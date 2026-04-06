@@ -20,10 +20,12 @@
 
 pub mod error;
 pub mod extractor;
+pub mod parse;
 pub mod pipeline;
 pub mod processor;
 pub mod segment;
 pub mod visualize;
+pub mod visualize_ast;
 
 pub use error::EngineError;
 pub use extractor::Extractor;

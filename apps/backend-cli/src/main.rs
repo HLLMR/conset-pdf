@@ -18,7 +18,8 @@ use chrono::Utc;
 use clap::{Parser, Subcommand};
 use conset_pdf_audit::{AuditBundle, AuditEvent, AuditEventData};
 use conset_pdf_contracts::{
-    OperationCounts, WorkflowOperation, WorkflowOptions, WorkflowRequest, CONTRACTS_VERSION,
+    KeyValuePair, OperationCounts, WorkflowOperation, WorkflowOptions, WorkflowRequest,
+    CONTRACTS_VERSION,
 };
 use serde_json::{Map, Value};
 use std::path::PathBuf;
@@ -83,12 +84,30 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Parse a segmented transcript into a structured document AST (not implemented).
+    /// Parse a PDF into a hierarchical document AST (extract → segment → parse pipeline).
     Parse {
+        /// Path to the input PDF.
         #[arg(short, long)]
         input: String,
+        /// Path for the output AST JSON.
         #[arg(short, long)]
         output: Option<String>,
+        /// Only parse the specified CSI section ID (e.g. "23 82 16"). Parses all sections when omitted.
+        #[arg(long)]
+        section: Option<String>,
+        /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Render a ParsedDocument AST JSON as a collapsible HTML tree (outline inspection).
+    VisualizeAst {
+        /// Path to the input AST JSON (produced by `parse`).
+        #[arg(short, long)]
+        input: String,
+        /// Output path for the rendered HTML file.
+        #[arg(short, long)]
+        output: String,
+        /// Validate arguments only; skip all rendering.
         #[arg(long)]
         dry_run: bool,
     },
@@ -126,25 +145,37 @@ fn main() -> Result<()> {
     }));
 
     // ── Build WorkflowRequest from CLI args ───────────────────────────────────
-    let (operation, input_path, output_path, dry_run) = match &cli.command {
+    let (operation, input_path, output_path, dry_run, extra_metadata) = match &cli.command {
         Commands::Extract { input, output, dry_run } => {
-            (WorkflowOperation::Extract, input.clone(), output.clone(), *dry_run)
+            (WorkflowOperation::Extract, input.clone(), output.clone(), *dry_run, vec![])
         }
         Commands::Visualize { input, output, dry_run } => {
-            (WorkflowOperation::Visualize, input.clone(), Some(output.clone()), *dry_run)
+            (WorkflowOperation::Visualize, input.clone(), Some(output.clone()), *dry_run, vec![])
         }
         Commands::Segment { input, output, dry_run } => {
-            (WorkflowOperation::Segment, input.clone(), output.clone(), *dry_run)
+            (WorkflowOperation::Segment, input.clone(), output.clone(), *dry_run, vec![])
         }
         Commands::VisualizeSegments { input, output, dry_run } => (
             WorkflowOperation::VisualizeSegments,
             input.clone(),
             Some(output.clone()),
             *dry_run,
+            vec![],
         ),
-        Commands::Parse { input, output, dry_run } => {
-            (WorkflowOperation::Parse, input.clone(), output.clone(), *dry_run)
+        Commands::Parse { input, output, section, dry_run } => {
+            let mut meta: Vec<KeyValuePair> = vec![];
+            if let Some(sec) = section {
+                meta.push(KeyValuePair { key: "section_filter".to_owned(), value: sec.clone() });
+            }
+            (WorkflowOperation::Parse, input.clone(), output.clone(), *dry_run, meta)
         }
+        Commands::VisualizeAst { input, output, dry_run } => (
+            WorkflowOperation::VisualizeAst,
+            input.clone(),
+            Some(output.clone()),
+            *dry_run,
+            vec![],
+        ),
     };
 
     let operation_id = format!("op-1-{}", started_at.timestamp_millis());
@@ -155,7 +186,7 @@ fn main() -> Result<()> {
         operation,
         input_path,
         output_path,
-        options: WorkflowOptions { dry_run, ..Default::default() },
+        options: WorkflowOptions { dry_run, metadata: extra_metadata, ..Default::default() },
     };
 
     // ── Dispatch ──────────────────────────────────────────────────────────────
