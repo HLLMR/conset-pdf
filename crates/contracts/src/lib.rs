@@ -82,6 +82,8 @@ pub enum WorkflowOperation {
     Extract,
     Segment,
     Parse,
+    /// Apply surgical edit operations (insert/delete/replace) to a ParsedDocument AST.
+    Edit,
     MergeAddenda,
     SplitSet,
     AssembleSet,

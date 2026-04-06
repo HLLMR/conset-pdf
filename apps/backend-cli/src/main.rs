@@ -111,6 +111,21 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Apply surgical edit operations (insert/delete/replace) to a ParsedDocument AST.
+    Edit {
+        /// Path to the input ParsedDocument JSON (produced by `parse`).
+        #[arg(short, long)]
+        input: String,
+        /// Path to the EditRequest JSON file describing the operations to apply.
+        #[arg(long)]
+        operations: String,
+        /// Path for the output (edited) ParsedDocument JSON.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -176,6 +191,13 @@ fn main() -> Result<()> {
             *dry_run,
             vec![],
         ),
+        Commands::Edit { input, operations, output, dry_run } => {
+            let meta = vec![KeyValuePair {
+                key: "operations_path".to_owned(),
+                value: operations.clone(),
+            }];
+            (WorkflowOperation::Edit, input.clone(), output.clone(), *dry_run, meta)
+        }
     };
 
     let operation_id = format!("op-1-{}", started_at.timestamp_millis());

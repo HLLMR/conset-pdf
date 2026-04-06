@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-05] Phase 4 Complete: Edit Operations
+
+### Added
+
+- **Phase 4 (Surgical AST Edit Operations):**
+  - `crates/ir/src/edit.rs` — `NodePath`, `EditOperation` (InsertAfter/Delete/Replace), `EditRequest`, `EditResult`, `EditError`; all serde round-tripped (8/8 unit tests).
+  - `crates/engine/src/edit.rs` — `SectionEditor` with pre-flight validation and `apply(EditRequest) -> EditResult`; helper functions `find_node`, `find_node_mut`, `find_in_parent`, `make_marker`, `renumber_siblings`, `apply_delete_to_section`, `apply_replace_to_section`, `apply_insert_after_to_section` (27/27 unit tests).
+  - `apps/backend-cli` — `edit` subcommand (`--input`, `--operations`, `--output`, `--dry-run`); handler in `src/handlers/edit.rs`; `WorkflowOperation::Edit` variant added to contracts.
+  - All 7 CLI handlers confirmed emitting `OperationStarted`/`OperationEnded` audit events — **G-006 closed**.
+  - 7 Phase 4 integration tests appended to `apps/backend-cli/tests/cli_integration_test.rs`: delete-renumber, replace-text-only, insert-after-renumber, multi-op, invalid-section failure, invalid-path failure, dry-run no-write. All 26/26 integration tests passing.
+- **G-003 accepted-closed** — `backend-cli` covers all runtime paths; `crates/engine/src/main.rs` version-only is deliberate scope deferral.
+
+### CSI Renumbering Scheme (canonical, locked in Phase 4)
+
+| Level | Tag | Marker format | Overflow limit |
+|---|---|---|---|
+| 0 | Part | `PART N` | unlimited |
+| 1 | Article | `P.N` (P = parent Part number) | unlimited |
+| 2 | Paragraph | `A.` … `Z.` | 26 |
+| 3 | SubParagraph | `1.` `2.` … | unlimited |
+| 4 | SubSubParagraph | `a.` … `z.` | 26 |
+| 5 | SubSubSubParagraph | `1)` `2)` … | unlimited |
+
+---
+
 ## [2026-04-05] Phase 1–3 Complete + Parser Hardening Sprint
 
 ### Added

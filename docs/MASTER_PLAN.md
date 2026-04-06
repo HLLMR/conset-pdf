@@ -1,5 +1,5 @@
 # Conset PDF: Master Plan
-**Version:** 4.3.0 (Phase 3 Complete + Parser Hardening)  
+**Version:** 4.4.0 (Phase 4 Complete: Edit Operations)  
 **Date:** April 5, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
@@ -890,9 +890,9 @@ Phase 2: Furniture/Sections (Weeks 6-7) ← COMPLETE
     ↓
 Phase 3: Paragraph Parsing (Weeks 8-9) ← COMPLETE + HARDENED
     ↓
-Phase 4: Edit Operations (Week 10) ← NEXT
+Phase 4: Edit Operations (Week 10) ← COMPLETE
     ↓
-Phase 5: Regeneration (Weeks 11-12)
+Phase 5: Regeneration (Weeks 11-12) ← NEXT
     ↓
 Phase 6: PDF Stitching (Week 13)
     ↓
@@ -1165,34 +1165,47 @@ Post-hardening results on `SPEC_RWB_LHHS_ALL_ORG.pdf` (571 pages, 89 sections):
 
 **Goal:** Apply surgical edits to AST.
 
-**Status: NOT STARTED — entry gate open.**
+**Status: COMPLETE — April 5, 2026.**
 
 **Deliverables:**
-- ☐ SectionEditor implementation
-- ☐ Insert operation (insert_after with renumbering)
-- ☐ Delete operation
-- ☐ Replace operation
-- ☐ Paragraph renumbering logic
-- ☐ Validation (target exists, no conflicts)
+- ✅ SectionEditor implementation
+- ✅ Insert operation (insert_after with renumbering)
+- ✅ Delete operation
+- ✅ Replace operation
+- ✅ Paragraph renumbering logic (all 6 CSI levels, canonical scheme locked)
+- ✅ Validation (target exists, no conflicts — pre-flight before any mutation)
 
 **Test:**
 ```bash
-cargo run -- edit test.pdf \
-  --section "23 82 16" \
-  --operation insert_after \
-  --target "2.7.B" \
-  --content "C. Provide return air damper." \
-  --renumber \
-  -o edited-ast.json
+# Parse a spec section first, then apply edits to the AST:
+cargo run --bin backend-cli -- parse spec.pdf -o ast.json
+cargo run --bin backend-cli -- edit \
+  --input ast.json \
+  --operations ops.json \
+  --output edited-ast.json
 ```
 
-**Output:** Modified AST with new paragraph 2.7.C, subsequent paragraphs renumbered.
+`ops.json` example:
+```json
+{
+  "description": "Insert paragraph after 2.7.B",
+  "operations": [{
+    "op": "insert_after",
+    "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.7", "B."] },
+    "new_node": { "tag": "paragraph", "marker": "X.", "text": "Provide return air damper.", "page_index": 0, "level": 2, "children": [] }
+  }]
+}
+```
+
+**Output:** Edited `ParsedDocument` JSON with renumbered siblings (B.→B., inserted→C., old C.→D., …).
 
 **Definition of Done:**
-- Insert/delete/replace operations work correctly
-- Renumbering cascades properly (C→D, D→E)
-- Validation catches invalid targets
-- Edited AST passes structural validation
+- ✅ Insert/delete/replace operations work correctly
+- ✅ Renumbering cascades properly (C→D, D→E) at all 6 CSI nesting levels
+- ✅ Validation catches invalid targets (SectionNotFound, PathNotFound, LevelMismatch pre-flight)
+- ✅ Edited AST passes structural validation
+- ✅ `OperationStarted`/`OperationEnded` audit events emitted (G-006 closed)
+- ✅ 7/7 Phase 4 integration tests pass; 26/26 total integration tests pass
 
 ---
 
@@ -2016,6 +2029,8 @@ This document is **constitutional**. Changes require explicit approval.
 | **4.2.5** | **2026-03-23** | **Assisted Intelligence, OCR, and Schedule Data Policy Update.** Key changes: (1) Added local micro-ML assist policy (on-device, deterministic-bounded, version-locked), (2) added power-user LLM validation/instruction API policy (explicit opt-in, advisory-by-default, auditable), (3) added first-class raster OCR policy with confidence/provenance requirements, (4) upgraded schedule extraction exports to schema-versioned JSON/CSV/XML contracts. |
 | **4.2.6** | **2026-03-23** | **Operational Trust, Automation, and Knowledge Layer Policy Update.** Key changes: (1) Added replayable correction manifests, provenance-first review, privacy/redaction, batch orchestration, and instruction DSL policies, (2) promoted native diff/exception triage workflows, (3) anchored standards normalization to existing canonical UDS/NCS/MasterFormat scaffold, (4) added cross-document entity resolution and project knowledge indexing as strategic capabilities. |
 | **4.2.7** | **2026-04-05** | **Phase 0.5 Completion.** Marked Phase 0.5 deliverables complete (✅). Corrected command examples to match locked implementation (`--family`, `--output-dir`). Updated Phase 0-0.5 Definition of Done with actual results (27 fixtures, 2892 pages validated, det_regressions=0, `crates/contracts/` complete). See `docs/PHASE_05_HANDOFF.md` for full downstream handoff and Appendix A for implementation history. |
+| **4.3.0** | **2026-04-05** | **Phase 1–3 Complete + Parser Hardening.** Marked Phases 1, 2, and 3 deliverables complete (✅). Updated Phase 3 Definition of Done with parser hardening results (89 sections, 7,971 nodes, 0.2% unclassified, 0/70 wrong-PART). Updated dependency graph: Phase 4 ← NEXT. 19/19 integration tests passing. |
+| **4.4.0** | **2026-04-05** | **Phase 4 Complete: Edit Operations.** Marked all Phase 4 deliverables complete (✅). New files: `crates/ir/src/edit.rs` (IR types, 8/8 unit tests), `crates/engine/src/edit.rs` (SectionEditor, 27/27 unit tests), `apps/backend-cli/src/handlers/edit.rs` (edit subcommand). `WorkflowOperation::Edit` contract variant added. CSI renumbering scheme locked for all 6 levels. G-006 (audit hooks) closed — all 7 handlers emit OperationStarted/OperationEnded. G-003 accepted-closed. Updated dependency graph: Phase 4 ← COMPLETE, Phase 5 ← NEXT. 26/26 integration tests passing. |
 
 ---
 

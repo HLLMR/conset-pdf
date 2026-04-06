@@ -1,6 +1,6 @@
 # Current State Summary
 
-**Version:** 2.4.0
+**Version:** 2.5.0
 **Date:** April 5, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
@@ -47,11 +47,102 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 2 complete: `SegmentIndex` IR types (`crates/ir/src/segment.rs`), CSI footer-oracle segmentation engine (`crates/engine/src/segment.rs`), `Segment` and `VisualizeSegments` operations wired in `backend-cli`; 5/5 Phase 2 integration tests pass (segment simple, segment spec, segment dry-run, visualize-segments round-trip, visualize-segments dry-run). Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 - Phase 3 complete: `ParsedDocument` AST IR types (`crates/ir/src/ast.rs`); line-clustering + CSI 3-part outline tree parser (`crates/engine/src/parse.rs`); HTML AST visualizer (`crates/engine/src/visualize_ast.rs`); `Parse` and `VisualizeAst` operations wired in `backend-cli`; 6/6 Phase 3 integration tests pass (parse dry-run, visualize-ast dry-run, parse simple, parse spec, parse spec with section filter, parse+visualize-ast round-trip). Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 - Phase 3 parser hardening sprint complete (April 5, 2026): span x-sort, LINE_Y_EPSILON 0.005→0.012, cluster-based section ID detection (16→89 sections), FOOTER_Y 0.85→0.90, noise-only line skipping, article_re major≥1 + uppercase-title guard, `inject_missing_parts` recovery pass. Post-hardening: 7,971 nodes, 0.2% unclassified, 0/70 wrong-PART sections, 19/19 integration tests passing. See `CHANGELOG.md` for full detail.
+- Phase 4 complete (April 5, 2026): `SectionEditor` edit engine in `crates/engine/src/edit.rs` (27/27 unit tests); `crates/ir/src/edit.rs` IR types (8/8 unit tests); `edit` CLI subcommand in `apps/backend-cli`; `WorkflowOperation::Edit` contract variant; all 7 CLI handlers confirmed emitting `OperationStarted`/`OperationEnded` audit events (G-006 closed); G-003 accepted-closed; 26/26 integration tests pass. See `CHANGELOG.md` for full detail.
 
 ## Next Focus
 
-- **Phase 3 hardening is COMPLETE. Phase 3 is fully CLOSED.**
-- **Phase 4 entry points (Band 3):** Edit operations — `SectionEditor` implementation with insert/delete/replace on `ParsedDocument` AST nodes, paragraph renumbering (cascading), CLI `edit` subcommand, new `WorkflowOperation::Edit` contract variant. See `docs/MASTER_PLAN.md` Phase 4 deliverables.
+- **Phase 4 is COMPLETE.** All 10 tasks delivered and tested.
+- **Phase 5 entry gate: OPEN.** Remaining tracked debt: G-008 (Document/Element stubs, LOW), G-010 (trivial audit tests, LOW). Neither blocks Phase 5 work.
+- Phase 5 candidates (to be scoped): rendering pipeline, addenda stitch, intake triage, or drawing title-block localization (G-018/G-019). See `gap-register.md` for full open gap list.
+
+---
+
+## Phase 4 Execution Plan: Edit Operations
+
+**Goal:** Working `SectionEditor` that applies insert/delete/replace to a `ParsedDocument` AST, renumbers affected siblings deterministically, exposes an `edit` CLI subcommand, wires `OperationStarted`/`OperationEnded` audit events (closes G-006), and has full integration test coverage.
+
+### Key Design Decisions
+
+**Node addressing:** `NodePath { section_id: String, markers: Vec<String> }` — vector of marker strings from the section root. Example: `{ section_id: "23 82 16", markers: ["PART 2", "2.7", "A."] }`. Mirrors how AEC practitioners describe edits verbally; unambiguous given the CSI level-marker grammar.
+
+**Renumbering scheme** after insert/delete — re-derive all sibling markers at the affected level:
+- Level 0 (Part): `PART 1`, `PART 2`, ...
+- Level 1 (Article): `N.1`, `N.2`, ... (N = parent Part number)
+- Level 2 (Paragraph): `A.`, `B.`, `C.`, ...
+- Level 3 (SubParagraph): `1.`, `2.`, `3.`, ...
+- Level 4 (SubSubParagraph): `a.`, `b.`, `c.`, ...
+- Level 5 (SubSubSubParagraph): `1)`, `2)`, `3)`, ...
+
+**Validation:** Pre-flight check on every `EditRequest` — section must exist, path must resolve, no renumbering overflows (>26 uppercase letters, etc.).
+
+**Audit:** Wire `OperationStarted`/`OperationEnded` into all CLI handlers simultaneously (satisfies G-006 while making edit audit events consistent with extract/segment/parse).
+
+### Micro-Task Checklist
+
+- [x] **4.1 — IR: edit types** (`crates/ir/src/edit.rs`, ~65 lines)
+  Define `NodePath`, `EditOperation { InsertAfter | Delete | Replace }`, `EditRequest`, `EditResult`, `EditError`. Export from `crates/ir/src/lib.rs`. Tests: round-trip serde for each type.
+
+- [x] **4.2 — Engine: node resolution** (`crates/engine/src/edit.rs`, ~75 lines)
+  `fn find_node<'a>(nodes: &'a [AstNode], markers: &[&str]) -> Option<&'a AstNode>` and mutable variant. Unit tests: found, not found, partial path, wrong section.
+
+- [x] **4.3 — Engine: delete operation** (~60 lines)
+  `fn apply_delete(ast: &mut SectionAst, path: &[&str]) -> Result<AstNode, EditError>` — removes target node, returns it. Unit tests: delete middle sibling, leaf node, root-level node.
+
+- [x] **4.4 — Engine: renumbering** (~80 lines)
+  `fn renumber_children(nodes: &mut Vec<AstNode>, level: u8)` — deterministically re-derives all sibling markers after structural change. Unit tests: renumber paragraphs after delete, renumber articles after insert, no-op when nothing changes.
+
+- [x] **4.5 — Engine: replace operation** (~50 lines)
+  `fn apply_replace(ast: &mut SectionAst, path: &[&str], new_content: AstNode) -> Result<(), EditError>` — replaces node content preserving position and marker. Unit tests: replace text, replace with children preserved.
+
+- [x] **4.6 — Engine: insert_after operation** (~70 lines)
+  `fn apply_insert_after(ast: &mut SectionAst, path: &[&str], new_node: AstNode) -> Result<(), EditError>` — inserts sibling after target, calls `renumber_children`. Unit tests: insert in middle, insert at end, verify downstream sibling markers updated.
+
+- [x] **4.7 — Engine: SectionEditor public API** (~80 lines)
+  `struct SectionEditor { doc: ParsedDocument }` with `fn apply(request: EditRequest) -> EditResult`. Validates full request pre-flight, dispatches ops in order, returns `EditResult` with applied ops and warnings. Unit tests: multi-op request, partial failure, empty request.
+
+- [x] **4.8 — Contract + CLI wiring + G-006 audit** (~90 lines across 3 files)
+  - Add `WorkflowOperation::Edit` variant to `crates/contracts/src/lib.rs`
+  - Add `Edit` subcommand to `apps/backend-cli/src/main.rs` (`--input` ParsedDocument JSON, `--operations` JSON file, `--output`, `--dry-run`)
+  - Create `apps/backend-cli/src/handlers/edit.rs` — drives `SectionEditor`, returns `WorkflowResponse`
+  - Wire `OperationStarted`/`OperationEnded` audit events into all handlers (`mod.rs`) — closes G-006
+
+- [x] **4.9 — Integration tests** (~130 lines appended to `apps/backend-cli/tests/cli_integration_test.rs`)
+  - `cli_edit_insert_after_succeeds` — insert new paragraph, verify sibling renumbering
+  - `cli_edit_delete_succeeds` — delete paragraph, verify count and renumbering
+  - `cli_edit_replace_succeeds` — replace node text, marker unchanged
+  - `cli_edit_renumber_cascades` — insert mid-list, all subsequent markers shifted
+  - `cli_edit_invalid_section_fails` — error on unknown section_id
+  - `cli_edit_invalid_path_fails` — error on path that doesn't resolve
+  - `cli_edit_dry_run_succeeds_without_writing` — dry-run returns success, no file written
+
+- [x] **4.10 — Gap register + docs update**
+  - Close G-003 as Accepted in `gap-register.md` (backend-cli covers runtime path by design)
+  - Close G-006 as Closed in `gap-register.md` (evidence: Task 4.8 handler wiring)
+  - Update `capability-matrix.md` — Phase 4 edit operations row
+  - Update `CHANGELOG.md` — Phase 4 milestone entry
+  - Update this file's "Phase 4 micro-task checklist" checkboxes above
+  - Update `state-summary.md` "Complete Now" section
+
+### Phase 4 File Map
+
+| File | Status | Task |
+|------|--------|------|
+| `crates/ir/src/edit.rs` | New | 4.1 |
+| `crates/ir/src/lib.rs` | Edit | 4.1 (add edit re-exports) |
+| `crates/engine/src/edit.rs` | New | 4.2–4.7 |
+| `crates/engine/src/lib.rs` | Edit | 4.7 (export edit module) |
+| `crates/contracts/src/lib.rs` | Edit | 4.8 (add `WorkflowOperation::Edit`) |
+| `apps/backend-cli/src/main.rs` | Edit | 4.8 (add `Edit` subcommand) |
+| `apps/backend-cli/src/handlers/edit.rs` | New | 4.8 |
+| `apps/backend-cli/src/handlers/mod.rs` | Edit | 4.8 (G-006 audit wiring + edit dispatch) |
+| `apps/backend-cli/tests/cli_integration_test.rs` | Edit | 4.9 (append Phase 4 tests) |
+| `docs/current-state/gap-register.md` | Edit | 4.10 |
+| `docs/current-state/capability-matrix.md` | Edit | 4.10 |
+| `CHANGELOG.md` | Edit | 4.10 |
+
+**Total scope:** ~700 lines of new/modified code across 10 tasks. Each task is self-contained and testable before moving to the next. Start with Task 4.1 (IR types) since all other tasks depend on those shapes being locked.
+
+---
 
 ## Evidence-Linked Assertions
 

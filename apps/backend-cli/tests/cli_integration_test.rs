@@ -845,3 +845,323 @@ fn cli_visualize_ast_dry_run_succeeds_without_writing_output() {
         "visualize-ast dry-run must not write output file"
     );
 }
+
+// ── Phase 4: Edit tests ───────────────────────────────────────────────────────
+
+/// Writes a minimal `ParsedDocument` JSON fixture to `path` and returns the
+/// CSI section ID embedded in it.  The fixture contains a single section
+/// ("23 82 16") with one Part, one Article, and three Paragraphs (A./B./C.),
+/// which gives enough structure to exercise all edit operations.
+fn write_edit_fixture(path: &PathBuf) -> &'static str {
+    let fixture = serde_json::json!({
+        "source_path": "/fixture/spec.pdf",
+        "sections": [{
+            "section_id": "23 82 16",
+            "section_title": "Heating Water Coils",
+            "start_page": 0,
+            "end_page": 5,
+            "parse_warnings": [],
+            "nodes": [{
+                "tag": "part",
+                "marker": "PART 2",
+                "text": "PRODUCTS",
+                "page_index": 0,
+                "level": 0,
+                "children": [{
+                    "tag": "article",
+                    "marker": "2.1",
+                    "text": "HEATING WATER COILS",
+                    "page_index": 0,
+                    "level": 1,
+                    "children": [
+                        { "tag": "paragraph", "marker": "A.", "text": "Original A text.", "page_index": 0, "level": 2, "children": [] },
+                        { "tag": "paragraph", "marker": "B.", "text": "Original B text.", "page_index": 0, "level": 2, "children": [] },
+                        { "tag": "paragraph", "marker": "C.", "text": "Original C text.", "page_index": 0, "level": 2, "children": [] }
+                    ]
+                }]
+            }]
+        }],
+        "global_warnings": []
+    });
+    std::fs::write(path, serde_json::to_string_pretty(&fixture).unwrap()).expect("write fixture");
+    "23 82 16"
+}
+
+/// Writes an `EditRequest` JSON to `path`.
+fn write_edit_request(path: &PathBuf, description: &str, ops: serde_json::Value) {
+    let req = serde_json::json!({ "description": description, "operations": ops });
+    std::fs::write(path, serde_json::to_string_pretty(&req).unwrap())
+        .expect("write edit request");
+}
+
+/// Helper: run `backend-cli edit --input <ast_json> --operations <ops_json>
+///          --output <out_json>`.
+fn run_edit(
+    ast_json: &PathBuf,
+    ops_json: &PathBuf,
+    out_json: &PathBuf,
+) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("edit")
+        .arg("--input")
+        .arg(ast_json)
+        .arg("--operations")
+        .arg(ops_json)
+        .arg("--output")
+        .arg(out_json)
+        .output()
+        .expect("failed to spawn backend-cli edit");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "edit exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("edit stdout must be valid JSON WorkflowResponse")
+}
+
+/// Delete the B. paragraph; A./C. should renumber to A./B.
+#[test]
+fn cli_edit_delete_renumbers_siblings() {
+    let tmp = tmp_dir("edit-delete");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Delete B.",
+        serde_json::json!([{
+            "op": "delete",
+            "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "B."] }
+        }]),
+    );
+
+    let resp = run_edit(&ast_json, &ops_json, &out_json);
+    assert_envelope(&resp);
+    assert_eq!(resp["result"]["status"], "succeeded", "edit status: {resp}");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out_json).unwrap()).unwrap();
+    let paras = &doc["sections"][0]["nodes"][0]["children"][0]["children"];
+    assert_eq!(paras.as_array().unwrap().len(), 2, "should have 2 paragraphs after delete");
+    assert_eq!(paras[0]["marker"], "A.");
+    assert_eq!(paras[1]["marker"], "B."); // formerly C., renumbered
+    assert_eq!(paras[1]["text"], "Original C text."); // content preserved
+}
+
+/// Replace A.'s text; marker and children unchanged.
+#[test]
+fn cli_edit_replace_updates_text_only() {
+    let tmp = tmp_dir("edit-replace");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Replace A. text",
+        serde_json::json!([{
+            "op": "replace",
+            "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "A."] },
+            "new_text": "Replacement text for A."
+        }]),
+    );
+
+    let resp = run_edit(&ast_json, &ops_json, &out_json);
+    assert_envelope(&resp);
+    assert_eq!(resp["result"]["status"], "succeeded", "edit status: {resp}");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out_json).unwrap()).unwrap();
+    let paras = &doc["sections"][0]["nodes"][0]["children"][0]["children"];
+    assert_eq!(paras[0]["marker"], "A."); // marker unchanged
+    assert_eq!(paras[0]["text"], "Replacement text for A.");
+    assert_eq!(paras.as_array().unwrap().len(), 3); // sibling count unchanged
+}
+
+/// Insert a new paragraph after B.; A./B./NEW/C. → renumbered A./B./C./D.
+#[test]
+fn cli_edit_insert_after_renumbers_downstream() {
+    let tmp = tmp_dir("edit-insert");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Insert after B.",
+        serde_json::json!([{
+            "op": "insert_after",
+            "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "B."] },
+            "new_node": {
+                "tag": "paragraph",
+                "marker": "X.", // overwritten by renumber
+                "text": "New inserted paragraph.",
+                "page_index": 0,
+                "level": 2,
+                "children": []
+            }
+        }]),
+    );
+
+    let resp = run_edit(&ast_json, &ops_json, &out_json);
+    assert_envelope(&resp);
+    assert_eq!(resp["result"]["status"], "succeeded", "edit status: {resp}");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out_json).unwrap()).unwrap();
+    let paras = &doc["sections"][0]["nodes"][0]["children"][0]["children"];
+    assert_eq!(paras.as_array().unwrap().len(), 4);
+    assert_eq!(paras[0]["marker"], "A.");
+    assert_eq!(paras[1]["marker"], "B.");
+    assert_eq!(paras[2]["marker"], "C."); // formerly X., renumbered
+    assert_eq!(paras[2]["text"], "New inserted paragraph.");
+    assert_eq!(paras[3]["marker"], "D."); // formerly C., renumbered
+}
+
+/// Multi-op request: replace then delete.
+#[test]
+fn cli_edit_multi_op_request_succeeds() {
+    let tmp = tmp_dir("edit-multi");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Replace A then delete C",
+        serde_json::json!([
+            {
+                "op": "replace",
+                "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "A."] },
+                "new_text": "Replaced A."
+            },
+            {
+                "op": "delete",
+                "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "C."] }
+            }
+        ]),
+    );
+
+    let resp = run_edit(&ast_json, &ops_json, &out_json);
+    assert_envelope(&resp);
+    assert_eq!(resp["result"]["status"], "succeeded", "edit status: {resp}");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out_json).unwrap()).unwrap();
+    let paras = &doc["sections"][0]["nodes"][0]["children"][0]["children"];
+    assert_eq!(paras.as_array().unwrap().len(), 2);
+    assert_eq!(paras[0]["text"], "Replaced A.");
+    assert_eq!(paras[1]["marker"], "B.");
+}
+
+/// Invalid section_id must return a failed response (preflight rejection).
+#[test]
+fn cli_edit_invalid_section_returns_failure() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("edit-bad-section");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Wrong section",
+        serde_json::json!([{
+            "op": "delete",
+            "path": { "section_id": "99 99 99", "markers": ["PART 1"] }
+        }]),
+    );
+
+    // edit handler must exit 0 but return status=failed in JSON.
+    let output = Command::new(&exe)
+        .arg("edit")
+        .arg("--input").arg(&ast_json)
+        .arg("--operations").arg(&ops_json)
+        .arg("--output").arg(&out_json)
+        .output()
+        .expect("failed to spawn backend-cli edit");
+
+    // backend-cli exits 0 because it handled the error gracefully.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "failed", "expected failed for bad section: {resp}");
+    assert!(!out_json.exists(), "output must not be written on failure");
+}
+
+/// Invalid path must return a failed response (preflight rejection).
+#[test]
+fn cli_edit_invalid_path_returns_failure() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("edit-bad-path");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let out_json = tmp.join("edited.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "Bad path",
+        serde_json::json!([{
+            "op": "delete",
+            "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "Z."] }
+        }]),
+    );
+
+    let output = Command::new(&exe)
+        .arg("edit")
+        .arg("--input").arg(&ast_json)
+        .arg("--operations").arg(&ops_json)
+        .arg("--output").arg(&out_json)
+        .output()
+        .expect("failed to spawn backend-cli edit");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "failed", "expected failed for bad path: {resp}");
+    assert!(!out_json.exists(), "output must not be written on failure");
+}
+
+/// Dry-run edit: must succeed without writing any output file.
+#[test]
+fn cli_edit_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("edit-dry-run");
+    let ast_json = tmp.join("ast.json");
+    let ops_json = tmp.join("ops.json");
+    let sentinel = tmp.join("should_not_exist.json");
+
+    write_edit_fixture(&ast_json);
+    write_edit_request(
+        &ops_json,
+        "dry run",
+        serde_json::json!([{
+            "op": "delete",
+            "path": { "section_id": "23 82 16", "markers": ["PART 2", "2.1", "A."] }
+        }]),
+    );
+
+    let output = Command::new(&exe)
+        .arg("edit")
+        .arg("--input").arg(&ast_json)
+        .arg("--operations").arg(&ops_json)
+        .arg("--output").arg(&sentinel)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli edit");
+
+    assert!(output.status.success(), "edit dry-run exited non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "succeeded");
+    assert!(!sentinel.exists(), "edit dry-run must not write output file");
+}

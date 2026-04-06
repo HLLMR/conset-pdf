@@ -1,0 +1,54 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-04-06T02:37:25.528520800Z",
+      "data": {
+        "type": "session_started",
+        "session_id": "session-1775443045527",
+        "started_at_utc": "2026-04-06T02:37:25.527070+00:00",
+        "contracts_version": "0.1.0",
+        "engine_version": "0.1.0"
+      }
+    },
+    {
+      "timestamp": "2026-04-06T02:37:25.528527900Z",
+      "data": {
+        "type": "operation_started",
+        "session_id": "session-1775443045527",
+        "operation_id": "op-1-1775443045527",
+        "operation": "parse",
+        "started_at_utc": "2026-04-06T02:37:25.528524900+00:00",
+        "page_count": null,
+        "file_size_bucket": null,
+        "detection_source": null
+      }
+    },
+    {
+      "timestamp": "2026-04-06T02:38:21.418140200Z",
+      "data": {
+        "type": "operation_ended",
+        "session_id": "session-1775443045527",
+        "operation_id": "op-1-1775443045527",
+        "operation": "parse",
+        "ended_at_utc": "2026-04-06T02:38:21.418126800+00:00",
+        "duration_ms": 55889,
+        "result": "succeeded"
+      }
+    },
+    {
+      "timestamp": "2026-04-06T02:38:21.430534700Z",
+      "data": {
+        "type": "session_ended",
+        "session_id": "session-1775443045527",
+        "ended_at_utc": "2026-04-06T02:38:21.430529400+00:00",
+        "duration_ms": 55903,
+        "operation_counts": {
+          "total": 1,
+          "succeeded": 1,
+          "failed": 0,
+          "warned": 0
+        }
+      }
+    }
+  ]
+}
