@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-06] Phase 5 Complete: Section Regeneration
+
+### Added
+
+- **Phase 5 (Section Regeneration — AST → PDF via HTML/CSS + Chrome):**
+  - `crates/ir/src/render.rs` — `SpecChromeMetadata` (project/firm/section chrome fields), `RenderConfig` (font family, font size, page size), `PageSize` (Letter/A4), `RenderResult` (pdf_bytes, page_count_estimate, warnings), `RenderError` (thiserror-derived: ChromeNotFound, TempFileError, ChromeError, PdfNotWritten, HtmlBuildError).
+  - `crates/engine/src/render/body.rs` — `build_body_html()`: converts `SectionAst` → HTML fragment; maps all 7 `OutlineTag` variants to CSS classes (`csi-part`, `csi-article`, `csi-para`, `csi-sub1`, `csi-sub2`, `csi-sub3`, `csi-body`).
+  - `crates/engine/src/render/chrome.rs` — `build_full_html()`: wraps body in `<!DOCTYPE html>` with `<head>`, CSS reset/typography, and CSS Paged Media `@page` margin-box rules (`@top-center` firm/project header, `@bottom-left` date+section+title, `@bottom-right` Page N of M via `counter(page)`/`counter(pages)`). All chrome fields HTML-escaped.
+  - `crates/engine/src/render/chrome_pdf.rs` — `render_html_to_pdf()`: invokes Chrome subprocess with `--headless --disable-gpu --no-sandbox --print-to-pdf`; binary discovery via `CHROME_PATH` env var with fallback to common Windows/Linux/macOS paths; writes PDF to temp file and reads bytes back.
+  - `crates/engine/src/render/mod.rs` — `SectionRenderer { config: RenderConfig }`: `new(config)`, `with_defaults()`, `render(ast, chrome_meta) -> Result<RenderResult, RenderError>`, `dry_run(ast, chrome_meta) -> RenderResult` (builds HTML, skips Chrome — used by CLI `--dry-run` and CI).
+  - `apps/backend-cli` — `regenerate` subcommand (`--ast`, `--chrome-metadata`, `--output`, `--section`, `--dry-run`, `--font`, `--font-size`); handler `src/handlers/regenerate.rs`; `WorkflowOperation::Regenerate` variant added to contracts.
+  - 5 Phase 5 integration tests appended to `apps/backend-cli/tests/cli_integration_test.rs`: dry-run no-write, missing-AST failure, missing-section failure, invalid-chrome-metadata failure, full-Chrome round-trip (`#[ignore]`). 30 non-ignored tests pass.
+- **G-010 closed** — 4 behavioral audit tests added to `crates/audit/src/bundle.rs`: JSON round-trip serde, event ordering, count tracking with clear, iter yields all events.
+- **G-008 accepted-closed** — `Document`/`Element` stubs in `crates/ir/src/types.rs` have no defined downstream consumer; closing as deliberate scope deferral pending Phase 6+ consumer.
+
+---
+
 ## [2026-04-05] Phase 4 Complete: Edit Operations
 
 ### Added

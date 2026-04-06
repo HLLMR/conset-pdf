@@ -1,7 +1,7 @@
 # Gap Register
 
-**Version:** 2.1.0
-**Date:** April 5, 2026
+**Version:** 2.2.0
+**Date:** April 6, 2026
 **Owner:** HLLMR LLC
 **Status:** ACTIVE
 **Doc Status Tag:** Implemented
@@ -28,9 +28,9 @@ Gap status:
 | G-005 | pdf-extraction / engine | `crates/engine/src/pipeline/extraction.rs` | PDF text → IR span conversion | MISSING-WIRING | CRITICAL | `ARCHITECTURE.md` — Pipeline connects pdf-extraction output to IR crate types | **Closed** — `RawBBox`→`BoundingBox`→`normalize_bbox()`→`BBox` and `BoundingBox::new()`→`Span::new()` conversion chain wired in `crates/engine/src/pipeline/extraction.rs`. Same commit as G-001 closure. |
 | G-006 | audit | `crates/audit/src/` | Audit hook integration | MISSING-WIRING | MEDIUM | `ARCHITECTURE.md` — Audit events generated during extraction and processing | **Closed** — Phase 4 Task 4.8 confirmed all 7 CLI handlers (`extract`, `visualize`, `segment`, `visualize-segments`, `parse`, `visualize-ast`, `edit`) emit `AuditEventData::OperationStarted` and `AuditEventData::OperationEnded` via `AuditBundle`. Evidence: `apps/backend-cli/src/handlers/edit.rs` and all sibling handlers in `apps/backend-cli/src/handlers/`. |
 | G-007 | ir | `crates/ir/src/validation.rs` | `Validator::validate()` | NOOP | MEDIUM | `DEV_STANDARDS.md` — Validation layer enforces all IR invariants at the crate boundary | **Closed** — `Validator::validate()` now delegates to `validate_transcript()` and maps the error to `String`. Evidence: `crates/ir/src/validation.rs`. |
-| G-008 | ir | `crates/ir/src/types.rs` | `Document`, `Element` structs | STUB | LOW | `ARCHITECTURE.md` — Document type models structured document content; purpose currently unclear | Open |
+| G-008 | ir | `crates/ir/src/types.rs` | `Document`, `Element` structs | STUB | LOW | `ARCHITECTURE.md` — Document type models structured document content; purpose currently unclear | **Accepted** — `Document` and `Element` stubs have no defined downstream consumer and carry no canonical claim that is currently being violated. Closing as deliberate scope deferral pending a concrete Phase 6+ consumer. No action required. |
 | G-009 | engine | `crates/engine/tests/end_to_end_test.rs` | E2E test pipeline invocation | TRIVIAL-TEST | HIGH | `MASTER_PLAN.md` — End-to-end pipeline test validates real PDF → LayoutTranscript path | **Closed** — `#[ignore]` removed from `test_e2e_loads_pdf_successfully` and `test_e2e_extracts_text_from_pdf`; `engine_api_test.rs` rewritten to use real `simple.pdf` fixture. All 6 E2E + 3 API tests pass. Evidence: `crates/engine/tests/end_to_end_test.rs`, `crates/engine/tests/engine_api_test.rs`. |
-| G-010 | audit | `crates/audit/src/bundle.rs` | Audit unit tests | TRIVIAL-TEST | LOW | `DEV_STANDARDS.md` — Tests validate behavior including JSON persistence and event ordering | Open |
+| G-010 | audit | `crates/audit/src/bundle.rs` | Audit unit tests | TRIVIAL-TEST | LOW | `DEV_STANDARDS.md` — Tests validate behavior including JSON persistence and event ordering | **Closed** — Phase 5 pre-work added 4 behavioral tests to `crates/audit/src/bundle.rs`: `test_json_round_trip_serde` (serializes/deserializes bundle, verifies event count and timestamp), `test_event_ordering_preserved` (3 events added in order, iter yields same order), `test_event_count_tracks_add_and_clear` (count increments and clear resets to 0), `test_iter_yields_all_events` (iter yields events matching added count). All 6 audit unit tests pass. Evidence: `crates/audit/src/bundle.rs`. |
 | G-011 | engine / workflows | (detection policy boundary) | Autonomous deterministic ROI candidate generation, ranking, and tie-break implementation | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — ROI detection is autonomous-first and deterministic | Open |
 | G-012 | apps/desktop-gui + backend-cli | (admin tooling boundary) | Admin-only manual ROI/profile refinement and override manifest flow | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` + `ARCHITECTURE.md` — manual ROI/profile management retained as admin-only refinement/fallback | Open |
 | G-013 | contracts + workflows | (intake boundary) | Multi-file intake bundle contract: `IntakeBundle` type, multi-input support in `WorkflowRequest`, `IntakeIssue` artifact type | MISSING-WIRING | HIGH | `MASTER_PLAN.md` Non-Negotiable #22 — Intake Triage is mandatory pre-Lexer stage | Open |

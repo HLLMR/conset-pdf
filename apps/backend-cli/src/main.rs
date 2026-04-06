@@ -126,6 +126,30 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Render a section from a ParsedDocument AST to a PDF via headless Chrome.
+    Regenerate {
+        /// Path to the input ParsedDocument JSON (produced by `parse` or `edit`).
+        #[arg(short, long)]
+        ast: String,
+        /// CSI section ID to render (e.g. "23 82 16"). Renders first section when omitted.
+        #[arg(long)]
+        section: Option<String>,
+        /// Path to a SpecChromeMetadata JSON file (headers/footers metadata).
+        #[arg(long)]
+        chrome_metadata: String,
+        /// Path for the output PDF file.
+        #[arg(short, long)]
+        output: String,
+        /// CSS font family override (default: "Arial, sans-serif").
+        #[arg(long)]
+        font: Option<String>,
+        /// Body font size in points (default: 10).
+        #[arg(long)]
+        font_size: Option<u8>,
+        /// Validate arguments and build HTML only; skip Chrome render.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -197,6 +221,27 @@ fn main() -> Result<()> {
                 value: operations.clone(),
             }];
             (WorkflowOperation::Edit, input.clone(), output.clone(), *dry_run, meta)
+        }
+        Commands::Regenerate { ast, section, chrome_metadata, output, font, font_size, dry_run } => {
+            let mut meta = vec![
+                KeyValuePair {
+                    key: "chrome_metadata_path".to_owned(),
+                    value: chrome_metadata.clone(),
+                },
+            ];
+            if let Some(sec) = section {
+                meta.push(KeyValuePair { key: "section_filter".to_owned(), value: sec.clone() });
+            }
+            if let Some(f) = font {
+                meta.push(KeyValuePair { key: "font_family".to_owned(), value: f.clone() });
+            }
+            if let Some(fs) = font_size {
+                meta.push(KeyValuePair {
+                    key: "font_size_pt".to_owned(),
+                    value: fs.to_string(),
+                });
+            }
+            (WorkflowOperation::Regenerate, ast.clone(), Some(output.clone()), *dry_run, meta)
         }
     };
 

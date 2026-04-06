@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.3.0  
-**Date:** April 5, 2026  
+**Version:** 4.4.0  
+**Date:** April 6, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -173,12 +173,12 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 ### Current Implementation Snapshot (April 2026)
 
-- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, visualize, visualize-segments, visualize-ast commands with typed audit bundles.
+- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast commands with typed audit bundles. All 8 handlers emit `OperationStarted`/`OperationEnded` audit events.
 - `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes working pipeline stages through Phase 3: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, and parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery. HTML AST visualizer (`visualize_ast.rs`) complete.
+- `crates/engine` exposes working pipeline stages through Phase 5: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, and render pipeline (`render/`) converting `SectionAst` → HTML fragment → full HTML with CSS `@page` margin boxes → PDF bytes via Chromium subprocess.
 - `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
-- `crates/ir` types and tests present for `LayoutTranscript`, `SegmentIndex`, and `ParsedDocument` ASTs; validation enforced.
-- `crates/audit` models and persistence implemented; pipeline hook integration remains open (G-006).
+- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs, `EditOperation`/`EditRequest`, and Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`); validation enforced.
+- `crates/audit` models and persistence implemented; all handlers emit audit events (G-006 closed).
 
 Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 
@@ -200,8 +200,14 @@ conset-pdf/
 │   │       ├── processor.rs    # Processor stage entrypoint
 │   │       ├── segment.rs      # CSI footer-oracle segmentation (COMPLETE)
 │   │       ├── parse.rs        # CSI outline paragraph parser (COMPLETE)
+│   │       ├── edit.rs         # SectionEditor — insert/delete/replace + renumber (COMPLETE)
 │   │       ├── visualize.rs    # Layout overlay PNG renderer
 │   │       ├── visualize_ast.rs # HTML collapsible AST visualizer (COMPLETE)
+│   │       ├── render/         # Section regeneration pipeline (COMPLETE)
+│   │       │   ├── body.rs       # AST → HTML fragment (7 OutlineTag CSS classes)
+│   │       │   ├── chrome.rs     # Full HTML with CSS @page margin-box rules
+│   │       │   ├── chrome_pdf.rs # Chromium subprocess renderer
+│   │       │   └── mod.rs        # SectionRenderer public API + dry_run()
 │   │       └── pipeline/       # extraction / furniture / parsing / optimization
 │   │
 │   ├── ir/                   # Layout IR (shared)
@@ -209,6 +215,8 @@ conset-pdf/
 │   │       ├── layout.rs       # LayoutTranscript, Page, Span, BBox
 │   │       ├── segment.rs      # SegmentIndex, SectionEntry
 │   │       ├── ast.rs          # ParsedDocument, SectionAst, AstNode, OutlineTag
+│   │       ├── edit.rs         # NodePath, EditOperation, EditRequest, EditResult, EditError
+│   │       ├── render.rs       # SpecChromeMetadata, RenderConfig, PageSize, RenderResult, RenderError
 │   │       └── validation.rs   # Coordinator: validate_transcript()
 │   │
 │   ├── audit/                # Audit framework (shared)

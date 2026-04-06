@@ -1,7 +1,7 @@
 # Decision Log
 
-**Version:** 1.8.0  
-**Date:** April 5, 2026  
+**Version:** 1.9.0  
+**Date:** April 6, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -41,6 +41,8 @@ High-value decisions that shape near-term execution.
 | D-027 | 2026-03-23 | Consolidate the committed feature set into an explicit phased priority stack: Phase 0.5 ships only Band 0 runtime and Band 0.5 contract-shaping; later runtime bands are deferred by design. | The feature surface is now broad enough to sprawl across Phase 0.5 unless runtime-vs-contract boundaries and post-0.5 landing zones are explicitly locked. | ../PHASE_05_HANDOFF.md, ../current-state/state-summary.md |
 | D-028 | 2026-04-04 | Use `page.text().chars()` (PDFium `FPDFText_LoadPage` / `FPDFText_GetCharBox` pipeline) rather than `page.objects().iter()` for text extraction in `pattern-dev` detection functions. | `page.objects().iter()` yields only top-level page objects; PDF Form XObjects — the standard mechanism for running headers/footers in AEC spec templates — appear as a single opaque node, causing `as_text_object()` to return `None` for all footer text. `page.text().chars()` descends transparently into Form XObjects and returns page-coordinate bounds for every character, enabling footer and header detection on all document types. Validated: 499→5 failures on SPEC_RWB_LHHS_ALL_ORG.pdf (571 pages) after switching API. | ../../tools/pattern_dev.rs, ../current-state/gap-register.md |
 | D-029 | 2026-04-05 | Retire `phase05Implementation.md` and integrate its content into `docs/PHASE_05_HANDOFF.md` Appendix A (Implementation History). | The implementation plan file served its purpose as execution scaffolding during Phase 0.5. With Phase L complete and all decisions, locked command surfaces, critical discoveries, and test inventory captured in `docs/PHASE_05_HANDOFF.md` Appendix A, the planning file is no longer needed and its retention as a separate root-level file would require ongoing maintenance. All dead links from D-009/D-010/D-013/D-014/D-016/D-027 updated to `../PHASE_05_HANDOFF.md`. | ../PHASE_05_HANDOFF.md, ../current-state/state-summary.md, ../DOCUMENTATION_INDEX.md |
+| D-030 | 2026-04-06 | Use `std::process::Command` to invoke the Chromium binary directly rather than the `headless_chrome` crate for Phase 5 HTML→PDF rendering. | The `headless_chrome` crate adds significant dependency weight, has API stability concerns, and uses a CDP (Chrome DevTools Protocol) socket path that is fragile across Chrome versions. Invoking `chrome --headless --print-to-pdf` via `Command` is simpler, requires no additional crate dependencies, and is stable across all Chromium-family browsers. The output PDF is written to a temp file and read back as bytes. | ../../crates/engine/src/render/chrome_pdf.rs |
+| D-031 | 2026-04-06 | Accept any Chromium-family browser (Chrome, Brave, Chromium, Edge) for the Phase 5 render path; search `CHROME_PATH` env var first, then well-known system paths including Brave. | The `--headless --print-to-pdf` flags and CSS Paged Media `@page` margin-box rules work identically across all Chromium-family browsers at Chrome 120+ equivalent. Brave is confirmed working in the dev environment (54 KB PDF, 42 s, full SPEC round-trip). Searching commonly-installed Chromium variants reduces the "Chrome not found" failure surface without adding any runtime dependency. | ../../crates/engine/src/render/chrome_pdf.rs |
 
 ## Decision Rule Reminder
 

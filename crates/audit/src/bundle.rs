@@ -88,4 +88,59 @@ mod tests {
         bundle.add_event(event);
         assert_eq!(bundle.event_count(), 1);
     }
+
+    #[test]
+    fn test_event_insertion_order_preserved() {
+        let mut bundle = AuditBundle::new();
+        for i in 0u32..3 {
+            bundle.add_event(AuditEvent::new(AuditEventData::SessionStarted {
+                session_id: format!("s-{i}"),
+                started_at_utc: "2026-01-01T00:00:00Z".into(),
+                contracts_version: "0.1.0".into(),
+                engine_version: None,
+            }));
+        }
+        let ids: Vec<String> = bundle
+            .iter()
+            .map(|e| match &e.data {
+                AuditEventData::SessionStarted { session_id, .. } => session_id.clone(),
+                _ => panic!("unexpected variant"),
+            })
+            .collect();
+        assert_eq!(ids, vec!["s-0", "s-1", "s-2"]);
+    }
+
+    #[test]
+    fn test_clear_resets_count() {
+        let mut bundle = AuditBundle::new();
+        bundle.add_event(AuditEvent::new(AuditEventData::SessionStarted {
+            session_id: "s".into(),
+            started_at_utc: "2026-01-01T00:00:00Z".into(),
+            contracts_version: "0.1.0".into(),
+            engine_version: None,
+        }));
+        assert_eq!(bundle.event_count(), 1);
+        bundle.clear();
+        assert_eq!(bundle.event_count(), 0);
+    }
+
+    #[test]
+    fn test_bundle_json_round_trip() {
+        let mut bundle = AuditBundle::new();
+        bundle.add_event(AuditEvent::new(AuditEventData::SessionStarted {
+            session_id: "round-trip-session".into(),
+            started_at_utc: "2026-04-06T00:00:00Z".into(),
+            contracts_version: "0.1.0".into(),
+            engine_version: Some("0.1.0".into()),
+        }));
+        let json = serde_json::to_string(&bundle).expect("serialization failed");
+        let restored: AuditBundle = serde_json::from_str(&json).expect("deserialization failed");
+        assert_eq!(restored.event_count(), 1);
+        match &restored.events[0].data {
+            AuditEventData::SessionStarted { session_id, .. } => {
+                assert_eq!(session_id, "round-trip-session");
+            }
+            _ => panic!("unexpected event variant after round-trip"),
+        }
+    }
 }

@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 2.5.0
-**Date:** April 5, 2026
+**Version:** 2.6.0
+**Date:** April 6, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -49,11 +49,12 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 3 parser hardening sprint complete (April 5, 2026): span x-sort, LINE_Y_EPSILON 0.005→0.012, cluster-based section ID detection (16→89 sections), FOOTER_Y 0.85→0.90, noise-only line skipping, article_re major≥1 + uppercase-title guard, `inject_missing_parts` recovery pass. Post-hardening: 7,971 nodes, 0.2% unclassified, 0/70 wrong-PART sections, 19/19 integration tests passing. See `CHANGELOG.md` for full detail.
 - Phase 4 complete (April 5, 2026): `SectionEditor` edit engine in `crates/engine/src/edit.rs` (27/27 unit tests); `crates/ir/src/edit.rs` IR types (8/8 unit tests); `edit` CLI subcommand in `apps/backend-cli`; `WorkflowOperation::Edit` contract variant; all 7 CLI handlers confirmed emitting `OperationStarted`/`OperationEnded` audit events (G-006 closed); G-003 accepted-closed; 26/26 integration tests pass. See `CHANGELOG.md` for full detail.
 
+- Phase 5 complete (April 6, 2026): Section regeneration pipeline implemented. `crates/ir/src/render.rs` — `SpecChromeMetadata`, `RenderConfig`, `PageSize`, `RenderResult`, `RenderError` IR types; `crates/engine/src/render/` — `body.rs` (AST→HTML fragment, 7 OutlineTag CSS classes), `chrome.rs` (full HTML with CSS `@page` margin-box rules for running headers/footers), `chrome_pdf.rs` (Chrome subprocess renderer with `CHROME_PATH`/system-path discovery), `mod.rs` (`SectionRenderer` public API + `dry_run()`); `regenerate` CLI subcommand with `--ast`, `--chrome-metadata`, `--output`, `--section`, `--dry-run`, `--font`, `--font-size`; `WorkflowOperation::Regenerate` contract variant; G-008 accepted-closed (no defined consumer); G-010 closed (4 behavioral audit tests added). 30/30 integration tests pass (4 Phase 5 non-Chrome tests added, 1 Chrome test ignored). See `CHANGELOG.md`.
+
 ## Next Focus
 
-- **Phase 4 is COMPLETE.** All 10 tasks delivered and tested.
-- **Phase 5 entry gate: OPEN.** Remaining tracked debt: G-008 (Document/Element stubs, LOW), G-010 (trivial audit tests, LOW). Neither blocks Phase 5 work.
-- Phase 5 candidates (to be scoped): rendering pipeline, addenda stitch, intake triage, or drawing title-block localization (G-018/G-019). See `gap-register.md` for full open gap list.
+- **Phase 5 is COMPLETE.** All tasks delivered and tested.
+- **Phase 6 candidates:** addenda stitching (multi-section re-bundle to PDF), intake triage (page-audit + rotation normalization via `lopdf`), or drawing title-block localization (G-018/G-019). See `gap-register.md` for open gap list.
 
 ---
 

@@ -1165,3 +1165,209 @@ fn cli_edit_dry_run_succeeds_without_writing_output() {
     assert_eq!(resp["result"]["status"], "succeeded");
     assert!(!sentinel.exists(), "edit dry-run must not write output file");
 }
+
+// ── Phase 5: Regenerate tests ─────────────────────────────────────────────────
+
+/// Writes a minimal [`SpecChromeMetadata`] JSON fixture to `path`.
+fn write_chrome_metadata(path: &PathBuf) {
+    let meta = serde_json::json!({
+        "project_id": "LHHS-001",
+        "project_name": "Lakewood Hills Health Sciences",
+        "section_id": "23 82 16",
+        "section_title": "Heating Water Coils",
+        "date": "2026-01-15",
+        "firm": "Test Engineers LLC"
+    });
+    std::fs::write(path, serde_json::to_string_pretty(&meta).unwrap())
+        .expect("write chrome metadata fixture");
+}
+
+/// Helper: run `backend-cli regenerate --ast <ast> --chrome-metadata <meta> --output <out>`.
+/// Asserts exit 0 and returns the parsed `WorkflowResponse` JSON.
+fn run_regenerate(
+    ast_json: &PathBuf,
+    chrome_json: &PathBuf,
+    out_pdf: &PathBuf,
+) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    let output = Command::new(&exe)
+        .arg("regenerate")
+        .arg("--ast")
+        .arg(ast_json)
+        .arg("--chrome-metadata")
+        .arg(chrome_json)
+        .arg("--output")
+        .arg(out_pdf)
+        .output()
+        .expect("failed to spawn backend-cli regenerate");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "regenerate exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_str(&stdout).expect("regenerate stdout must be valid JSON WorkflowResponse")
+}
+
+/// Dry-run regenerate: must succeed without invoking Chrome or writing a PDF.
+#[test]
+fn cli_regenerate_dry_run_succeeds_without_writing_output() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("regen-dry-run");
+    let ast_json = tmp.join("ast.json");
+    let chrome_json = tmp.join("chrome.json");
+    let sentinel = tmp.join("should_not_exist.pdf");
+
+    write_edit_fixture(&ast_json);
+    write_chrome_metadata(&chrome_json);
+
+    let output = Command::new(&exe)
+        .arg("regenerate")
+        .arg("--ast")
+        .arg(&ast_json)
+        .arg("--chrome-metadata")
+        .arg(&chrome_json)
+        .arg("--output")
+        .arg(&sentinel)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli regenerate --dry-run");
+
+    assert!(output.status.success(), "regenerate dry-run exited non-zero");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("dry-run stdout must be JSON");
+    assert_envelope(&resp);
+    assert_eq!(resp["result"]["status"], "succeeded", "dry-run must succeed: {resp}");
+    assert!(!sentinel.exists(), "dry-run must not write any output PDF");
+}
+
+/// Non-existent AST file: must exit 0 and return status=failed with
+/// error code `INPUT_READ_ERROR`.
+#[test]
+fn cli_regenerate_missing_ast_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("regen-bad-ast");
+    let chrome_json = tmp.join("chrome.json");
+    let out_pdf = tmp.join("out.pdf");
+
+    write_chrome_metadata(&chrome_json);
+
+    let output = Command::new(&exe)
+        .arg("regenerate")
+        .arg("--ast")
+        .arg(tmp.join("nonexistent_ast.json")) // does not exist
+        .arg("--chrome-metadata")
+        .arg(&chrome_json)
+        .arg("--output")
+        .arg(&out_pdf)
+        .output()
+        .expect("failed to spawn backend-cli regenerate");
+
+    assert!(output.status.success(), "regenerate must exit 0 even on input error");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "failed", "must fail for missing AST: {resp}");
+    assert!(!out_pdf.exists(), "output must not be written on failure");
+}
+
+/// Section ID not present in the ParsedDocument: must exit 0 and return
+/// status=failed with error code `SECTION_NOT_FOUND`.
+#[test]
+fn cli_regenerate_missing_section_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("regen-bad-section");
+    let ast_json = tmp.join("ast.json");
+    let chrome_json = tmp.join("chrome.json");
+    let out_pdf = tmp.join("out.pdf");
+
+    write_edit_fixture(&ast_json);
+    write_chrome_metadata(&chrome_json);
+
+    let output = Command::new(&exe)
+        .arg("regenerate")
+        .arg("--ast")
+        .arg(&ast_json)
+        .arg("--chrome-metadata")
+        .arg(&chrome_json)
+        .arg("--section")
+        .arg("99 99 99") // section ID not in fixture
+        .arg("--output")
+        .arg(&out_pdf)
+        .output()
+        .expect("failed to spawn backend-cli regenerate");
+
+    assert!(output.status.success(), "regenerate must exit 0 even on section error");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(resp["result"]["status"], "failed", "must fail for missing section: {resp}");
+    assert!(!out_pdf.exists(), "output must not be written on failure");
+}
+
+/// Chrome metadata file contains invalid JSON: must exit 0 and return
+/// status=failed with error code `CHROME_METADATA_READ_ERROR`.
+#[test]
+fn cli_regenerate_invalid_chrome_metadata_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("regen-bad-chrome");
+    let ast_json = tmp.join("ast.json");
+    let chrome_json = tmp.join("chrome.json");
+    let out_pdf = tmp.join("out.pdf");
+
+    write_edit_fixture(&ast_json);
+    std::fs::write(&chrome_json, b"{ not valid json }").expect("write bad chrome metadata");
+
+    let output = Command::new(&exe)
+        .arg("regenerate")
+        .arg("--ast")
+        .arg(&ast_json)
+        .arg("--chrome-metadata")
+        .arg(&chrome_json)
+        .arg("--output")
+        .arg(&out_pdf)
+        .output()
+        .expect("failed to spawn backend-cli regenerate");
+
+    assert!(output.status.success(), "regenerate must exit 0 even on parse error");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let resp: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        resp["result"]["status"], "failed",
+        "must fail for invalid chrome metadata JSON: {resp}"
+    );
+    assert!(!out_pdf.exists(), "output must not be written on failure");
+}
+
+/// Full regenerate round-trip: parse SPEC → regenerate → verify PDF bytes.
+/// Ignored by default — requires a local Chrome 120+ installation.
+#[test]
+#[ignore = "requires a Chromium-family browser (Chrome, Brave, Edge, Chromium) — set CHROME_PATH or install to a standard system path"]
+fn cli_regenerate_produces_pdf() {
+    let tmp = tmp_dir("regen-full");
+    let pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let ast_json = tmp.join("ast.json");
+    let chrome_json = tmp.join("chrome.json");
+    let out_pdf = tmp.join("out.pdf");
+
+    run_parse(&pdf, &ast_json);
+    write_chrome_metadata(&chrome_json);
+
+    let resp = run_regenerate(&ast_json, &chrome_json, &out_pdf);
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "regenerate must succeed with Chrome installed: {resp}"
+    );
+    assert!(out_pdf.exists(), "regenerate must write an output PDF");
+    let pdf_bytes = std::fs::read(&out_pdf).expect("read output PDF");
+    assert!(
+        pdf_bytes.starts_with(b"%PDF"),
+        "output file must be a valid PDF (starts with %PDF header)"
+    );
+    assert!(pdf_bytes.len() > 1024, "output PDF is suspiciously small ({} bytes)", pdf_bytes.len());
+}

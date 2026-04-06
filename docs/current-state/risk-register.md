@@ -1,7 +1,7 @@
 # Risk Register
 
-**Version:** 1.5.0  
-**Date:** March 23, 2026  
+**Version:** 1.6.0  
+**Date:** April 6, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -16,7 +16,7 @@ Active project risks with severity, owner, mitigation, and decision date.
 | R-002 | Foundation completeness claim may hide remaining scope gaps if not continuously reconciled with tests. | High | Engineering lead | Run alignment audit in Phase F and keep gap register current. | 2026-03-22 | **In Progress** — Phase E complete, gap-register.md updated through v1.5.0 (G-001–G-039). Phase F alignment audit complete; capability-matrix updated with accurate status. |
 | R-003 | Historical prototype guidance may be accidentally treated as normative by agents or contributors. | Medium | Documentation owner | Mark archived docs clearly and keep canonical list at top of index. | 2026-03-22 | Active |
 | R-004 | Capability status may become stale without regular updates to this library. | Medium | Project maintainer | Update this library in each planning milestone and release checkpoint. | 2026-03-22 | Active |
-| R-005 | No real PDF→IR conversion path exists — engine and pdf-extraction crates are not connected, so no end-to-end pipeline is possible. | Critical | Engineering lead | Gap G-001/G-004/G-005 must be closed before any real extraction output can be produced. Track in gap-register.md. | 2026-03-22 | Open |
+| R-005 | No real PDF→IR conversion path exists — engine and pdf-extraction crates are not connected, so no end-to-end pipeline is possible. | Critical | Engineering lead | Gap G-001/G-004/G-005 must be closed before any real extraction output can be produced. Track in gap-register.md. | 2026-03-22 | **Closed** — Phase 1 Band 0 closed G-001, G-004, G-005: `PdfiumExtractor::extract_page()` implemented with real pdfium-render calls; `SpanData`→`BoundingBox`→`normalize_bbox()`→`BBox`→`Span` conversion chain wired in `crates/engine/src/pipeline/extraction.rs`; end-to-end extract pipeline operational. 31/31 integration tests pass. |
 | R-006 | Autonomous ROI strategy rollout may regress extraction reliability if deterministic scoring and fallback diagnostics are under-specified. | High | Architecture owner | Implement G-011 with strict deterministic ranking/tie-break rules and explicit ROI diagnostics; keep admin-only override path (G-012) until corpus thresholds are met. | 2026-03-23 | Open |
 | R-007 | `lopdf` write-path correctness may silently corrupt page structure, bookmarks, or byte-identical unchanged pages if page-level mutations are not validated. | High | Engineering lead | Require round-trip validation tests for every `lopdf` mutation: verify unchanged pages are byte-identical, bookmarks resolve correctly, and page count matches expectations. G-014/G-016 implementations must include these tests before merge. | 2026-03-23 | Open |
 | R-008 | Autonomous document-type classification may misclassify pages in mixed-medium PDFs, causing downstream medium-specific processors to operate on wrong input. | Medium | Architecture owner | Classification output is advisory only (Non-Negotiable #18 revision, D-012); no processing workflow executes without explicit user confirmation. Classification must emit confidence per page-range, not binary assignment. | 2026-03-23 | Open |

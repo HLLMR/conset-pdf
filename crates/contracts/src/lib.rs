@@ -84,6 +84,8 @@ pub enum WorkflowOperation {
     Parse,
     /// Apply surgical edit operations (insert/delete/replace) to a ParsedDocument AST.
     Edit,
+    /// Render a section AST to a PDF file via headless Chrome.
+    Regenerate,
     MergeAddenda,
     SplitSet,
     AssembleSet,

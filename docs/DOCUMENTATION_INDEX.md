@@ -1,8 +1,8 @@
 # Conset PDF Documentation Index
 
 **Repository**: conset-pdf  
-**Version**: 2.1.0  
-**Last Updated**: April 5, 2026  
+**Version**: 2.2.0  
+**Last Updated**: April 6, 2026  
 **Status**: Active canonical index  
 **Doc Status Tag:** Implemented
 
