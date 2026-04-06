@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 2.3.0
-**Date:** April 7, 2026
+**Version:** 2.4.0
+**Date:** April 5, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -46,10 +46,11 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 1 complete: 8/8 CLI integration tests pass across SPEC, DWG, NAR, SUB, and simple fixtures; coordinate system verified (no axis inversion); `source_path` canonicalized to absolute path at extraction time. Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 - Phase 2 complete: `SegmentIndex` IR types (`crates/ir/src/segment.rs`), CSI footer-oracle segmentation engine (`crates/engine/src/segment.rs`), `Segment` and `VisualizeSegments` operations wired in `backend-cli`; 5/5 Phase 2 integration tests pass (segment simple, segment spec, segment dry-run, visualize-segments round-trip, visualize-segments dry-run). Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
 - Phase 3 complete: `ParsedDocument` AST IR types (`crates/ir/src/ast.rs`); line-clustering + CSI 3-part outline tree parser (`crates/engine/src/parse.rs`); HTML AST visualizer (`crates/engine/src/visualize_ast.rs`); `Parse` and `VisualizeAst` operations wired in `backend-cli`; 6/6 Phase 3 integration tests pass (parse dry-run, visualize-ast dry-run, parse simple, parse spec, parse spec with section filter, parse+visualize-ast round-trip). Evidence: `apps/backend-cli/tests/cli_integration_test.rs`.
+- Phase 3 parser hardening sprint complete (April 5, 2026): span x-sort, LINE_Y_EPSILON 0.005→0.012, cluster-based section ID detection (16→89 sections), FOOTER_Y 0.85→0.90, noise-only line skipping, article_re major≥1 + uppercase-title guard, `inject_missing_parts` recovery pass. Post-hardening: 7,971 nodes, 0.2% unclassified, 0/70 wrong-PART sections, 19/19 integration tests passing. See `CHANGELOG.md` for full detail.
 
 ## Next Focus
 
-- **Phase 3 is COMPLETE.**
+- **Phase 3 hardening is COMPLETE. Phase 3 is fully CLOSED.**
 - **Phase 4 entry points (Band 3):** Edit operations — `SectionEditor` implementation with insert/delete/replace on `ParsedDocument` AST nodes, paragraph renumbering (cascading), CLI `edit` subcommand, new `WorkflowOperation::Edit` contract variant. See `docs/MASTER_PLAN.md` Phase 4 deliverables.
 
 ## Evidence-Linked Assertions

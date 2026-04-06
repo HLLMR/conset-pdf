@@ -1,6 +1,6 @@
 # Conset PDF: Master Plan
-**Version:** 4.2.6 (Operational Trust, Automation, and Knowledge Layer Policy Update)  
-**Date:** March 23, 2026  
+**Version:** 4.3.0 (Phase 3 Complete + Parser Hardening)  
+**Date:** April 5, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
 **Doc Status Tag:** Implemented
@@ -888,9 +888,9 @@ Phase 1: Layout Extraction (Weeks 4-5) ← COMPLETE
     ↓
 Phase 2: Furniture/Sections (Weeks 6-7) ← COMPLETE
     ↓
-Phase 3: Paragraph Parsing (Weeks 8-9) ← COMPLETE
+Phase 3: Paragraph Parsing (Weeks 8-9) ← COMPLETE + HARDENED
     ↓
-Phase 4: Edit Operations (Week 10)
+Phase 4: Edit Operations (Week 10) ← NEXT
     ↓
 Phase 5: Regeneration (Weeks 11-12)
     ↓
@@ -1116,6 +1116,8 @@ cargo run -- visualize-segments test.pdf index.json -o debug/
 
 **Goal:** Parse sections into hierarchical AST.
 
+**Status: COMPLETE — April 5, 2026.** See bug-fix sprint note below.
+
 **Deliverables:**
 - ✅ Line grouping (baseline clustering)
 - ✅ Paragraph detection
@@ -1136,14 +1138,34 @@ cargo run -- visualize-ast ast.json -o debug/ast.html
 - ✅ AST accurately represents section structure
 - ✅ Outline numbering parsed correctly (2.7.A, 2.7.B, etc.)
 - ✅ Nesting levels inferred correctly
-- ✅ Part/Article boundaries detected
-- ✅ Works on 80% of torture corpus sections
+- ✅ Part/Article/Paragraph boundaries detected (all 5 nesting levels)
+- ✅ Works on 80%+ of torture corpus sections (0.2% unclassified node rate on full 571-page corpus)
+- ✅ 19/19 CLI integration tests pass
+
+**Bug-fix sprint (post-Phase 3, April 5, 2026):**
+
+A second pass hardened the parser after real-corpus inspection revealed:
+
+1. **Span x-sort** — PDFium returns spans in content-stream order; sorted by (y, x) before line clustering.
+2. **LINE_Y_EPSILON** raised from 0.005 → 0.012 — dashes on the same visual line had y-delta up to 0.006.
+3. **Cluster-based section ID detection** in segment engine — footer IDs are split across 2–3 spans; merged before regex match. Also raised FOOTER_Y threshold from 0.85 → 0.90 to exclude body cross-references.
+4. **Noise-only line skipping** — lone punctuation spans (dashes, bullets) discarded before they could anchor all subsequent content as continuation text.
+5. **Article regex tightened** — major number must be ≥ 1 (kills `0.x` decimal matches); title must begin with uppercase letter (kills measurement strings).
+6. **`inject_missing_parts` recovery pass** — synthetic PART nodes injected when article major number jumps to a part that was never explicitly opened (recovers from kerning-broken PART headers and segmenter page-boundary errors).
+
+Post-hardening results on `SPEC_RWB_LHHS_ALL_ORG.pdf` (571 pages, 89 sections):
+- 89 sections detected
+- 7,971 total nodes; 0.2% unclassified rate
+- 0/70 structured sections with wrong-PART nesting (was 13/70)
+- Node distribution: 185 part, 779 article, 2983 paragraph, 2698 sub_paragraph, 1052 sub_sub_paragraph, 258 sub_sub_sub_paragraph, 16 unclassified (all front-matter/forms, expected)
 
 ---
 
 ### Phase 4 — Edit Operations (Week 10)
 
 **Goal:** Apply surgical edits to AST.
+
+**Status: NOT STARTED — entry gate open.**
 
 **Deliverables:**
 - ☐ SectionEditor implementation

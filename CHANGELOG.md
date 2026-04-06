@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-05] Phase 1–3 Complete + Parser Hardening Sprint
+
+### Added
+
+- **Phase 1 (Layout Transcript Extraction):** Real PDFium extraction wired in `crates/engine/src/pipeline/extraction.rs`; `SpanData`→`Span` conversion with normalized bbox (top-left origin, [0,1] range); `visualize` CLI subcommand with per-page PNG overlay; G-001, G-002, G-005, G-007, G-009 all closed; 8/8 integration tests pass across SPEC, DWG, NAR, SUB, and simple fixtures.
+- **Phase 2 (Section Segmentation):** `SegmentIndex` and `SectionEntry` IR types in `crates/ir/src/segment.rs`; CSI footer-oracle segmentation engine in `crates/engine/src/segment.rs`; `segment` and `visualize-segments` CLI subcommands; 5/5 Phase 2 integration tests pass.
+- **Phase 3 (Paragraph Parsing & AST):** `ParsedDocument`, `SectionAst`, `AstNode`, `OutlineTag` IR types in `crates/ir/src/ast.rs`; line-clustering + 5-level CSI outline tree parser in `crates/engine/src/parse.rs` with `build_tree` and `classify_lines`; HTML collapsible AST visualizer in `crates/engine/src/visualize_ast.rs`; `parse` and `visualize-ast` CLI subcommands; 6/6 Phase 3 integration tests pass.
+
+### Fixed (Parser Hardening Sprint — April 5, 2026)
+
+- **Span x-sort:** PDFium returns spans in content-stream order; all `body_spans` now sorted by `(y ASC, x ASC)` before line clustering. Without this, PART headings were assembled in wrong order (`"GENERAL PART 1"` instead of `"PART 1 GENERAL"`), causing regex failures.
+- **`LINE_Y_EPSILON` raised 0.005 → 0.012:** Same-visual-line spans (e.g. dash separators) had y-delta up to 0.006, formerly splitting them into separate clusters and breaking line text assembly.
+- **Cluster-based section ID detection** (`crates/engine/src/segment.rs`): Footer section IDs are rendered as 2–3 adjacent spans (`"22 "`, `"07 "`, `"00 "`). New `detect_section_id()` merges all footer spans (y > FOOTER_Y=0.90) into x-proximity clusters, applies a single-digit merge pass (`"0 0"`→`"00"`) for PDFium split-zero rendering, skips date clusters (4-digit year), then matches on merged text. Section detection: 16 → 89 sections.
+- **`FOOTER_Y` raised 0.85 → 0.90:** Body text at y ≈ 0.86–0.89 contained cross-references with CSI section IDs (e.g. `"specifications in accordance with Section 22 05 00."`) that generated false-positive section boundaries.
+- **Noise-only line skipping** (`crates/engine/src/parse.rs`, `classify_lines`): Lines whose trimmed text consists entirely of punctuation/whitespace characters (`- –—|•·*\\/`) are discarded rather than becoming unclassified root nodes that absorb all subsequent content as continuation text.
+- **Article regex major ≥ 1** (`article_re`): Changed `^(\d+\.\d+)` → `^([1-9]\d*\.\d+)`. Eliminates phantom articles from `0.x` decimal continuations (e.g., `"0.26 Acceptable Manufacturers"`, `"0.016 inches thick wall"`).
+- **Article regex uppercase title** (`article_re`): Changed `(\S.*)` → `([A-Z].*)`. Requires article title to start with uppercase letter, excluding decimal measurements and lowercase continuation fragments.
+- **`inject_missing_parts` recovery pass** (`crates/engine/src/parse.rs`): New post-classification pass inserts synthetic `PART N` flat items when an article's major number jumps to a part that was never explicitly opened. Recovers from (a) PART heading lines broken by PDFium kerning artifacts and (b) segmenter cutting section one page too early. Corrected 13/70 structured sections that had wrong-PART article nesting.
+- **Test isolation** (`apps/backend-cli/tests/cli_integration_test.rs`): `cli_segment_and_visualize_segments_spec_pdf` now clears the vis directory before the visualize call. Previously accumulated PNGs from prior runs inflated the count check.
+
+### Summary Statistics (post-hardening, `SPEC_RWB_LHHS_ALL_ORG.pdf`, 571 pages)
+
+| Metric | Before hardening | After hardening |
+|---|---|---|
+| Sections detected | 16 | 89 |
+| Total AST nodes | 218 | 7,971 |
+| Unclassified node rate | 11% | 0.2% |
+| Wrong-PART sections | 13/70 | 0/70 |
+| Integration tests | 19/19 | 19/19 |
+
 ## [2026-04-04] Phase 0.5 Phases B–E
 
 ### Added

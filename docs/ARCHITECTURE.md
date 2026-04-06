@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.2.6  
-**Date:** March 23, 2026  
+**Version:** 4.3.0  
+**Date:** April 5, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -171,14 +171,14 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Current Implementation Snapshot (March 2026)
+### Current Implementation Snapshot (April 2026)
 
-- `apps/backend-cli` is implemented as the primary executable surface and writes typed audit bundles.
+- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, visualize, visualize-segments, visualize-ast commands with typed audit bundles.
 - `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes pipeline stages, but stages remain mostly pass-through/scaffold logic.
-- `crates/pdf-extraction` has working document/page loading and text extraction primitives, but page-structured extraction remains incomplete.
-- `crates/ir` types and tests are present; full validator enforcement remains incomplete.
-- `crates/audit` models and persistence are implemented; pipeline hook integration remains open.
+- `crates/engine` exposes working pipeline stages through Phase 3: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, and parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery. HTML AST visualizer (`visualize_ast.rs`) complete.
+- `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
+- `crates/ir` types and tests present for `LayoutTranscript`, `SegmentIndex`, and `ParsedDocument` ASTs; validation enforced.
+- `crates/audit` models and persistence implemented; pipeline hook integration remains open (G-006).
 
 Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 
@@ -195,43 +195,35 @@ conset-pdf/
 ├── crates/
 │   ├── engine/               # Pipeline orchestration and runtime API
 │   │   └── src/
-│   │       ├── main.rs       # Engine binary stub
-│   │       ├── lib.rs        # Public API
-│   │       ├── extractor.rs  # Extractor API
-│   │       ├── processor.rs  # Processor API
-│   │       └── pipeline/     # extraction/furniture/parsing/optimization
+│   │       ├── lib.rs          # Public API
+│   │       ├── extractor.rs    # Extractor stage entrypoint
+│   │       ├── processor.rs    # Processor stage entrypoint
+│   │       ├── segment.rs      # CSI footer-oracle segmentation (COMPLETE)
+│   │       ├── parse.rs        # CSI outline paragraph parser (COMPLETE)
+│   │       ├── visualize.rs    # Layout overlay PNG renderer
+│   │       ├── visualize_ast.rs # HTML collapsible AST visualizer (COMPLETE)
+│   │       └── pipeline/       # extraction / furniture / parsing / optimization
 │   │
 │   ├── ir/                   # Layout IR (shared)
 │   │   └── src/
-│   │       ├── types.rs
-│   │       ├── transcript.rs
-│   │       ├── geometry.rs
-│   │       └── validation.rs
+│   │       ├── layout.rs       # LayoutTranscript, Page, Span, BBox
+│   │       ├── segment.rs      # SegmentIndex, SectionEntry
+│   │       ├── ast.rs          # ParsedDocument, SectionAst, AstNode, OutlineTag
+│   │       └── validation.rs   # Coordinator: validate_transcript()
 │   │
 │   ├── audit/                # Audit framework (shared)
-│   │   └── src/
-│   │       ├── events.rs
-│   │       ├── bundle.rs
-│   │       ├── writer.rs
-│   │       └── lib.rs
-│   │
-│   ├── pdf-extraction/       # PDF library wrapper (shared)
-│   │   └── src/
-│   │       ├── extractor.rs
-│   │       ├── traits.rs
-│   │       └── error.rs
-│   │
+│   ├── pdf-extraction/       # PDF library wrapper (PDFium)
 │   ├── contracts/            # Shared request/response/event schemas
 │   ├── workflows/            # Workflow contracts/orchestration scaffolds
 │   └── standards-data/       # Standards datasets and lookup support
-│   │
 ├── tools/
 │   ├── Cargo.toml
-│   └── classify_pdf.rs       # Utility binary for PDF corpus classification
-│
+│   ├── classify_pdf.rs
+│   ┬── pattern_dev.rs
+│   └── src/
 └── tests/
-  ├── integration/          # Cross-crate integration tests
-  └── corpus/               # Tiered PDF corpus fixtures
+  ├── integration/
+  └── corpus/
 ```
 
 ---
@@ -308,6 +300,12 @@ conset-pdf/
 - `extract_page(...)` (currently scaffold-level)
 
 **Critical:** Crash containment, memory caps, safe failure modes.
+
+**PDFium Behavioral Notes:**
+- Spans are returned in **content-stream order** (not reading order); all extraction code must sort by `(y, x)` before line clustering.
+- Kerning artifacts can split a single word across multiple spans (e.g. `"AH RI"`, `"r ated"`); this is a pre-parse artifact that cannot be corrected at the parser layer.
+- Isolated digits may be split further across spans (e.g. `"0 0"` for `"00"`); affected spans must be merged prior to line assembly.
+- Form XObjects are **transparent** in the FPDFText API path — text embedded inside XObjects is not returned by `FPDFText_GetText`.
 
 ---
 
@@ -418,12 +416,29 @@ The stage contracts below define the target behavior. Current implementation sta
 
 **Input:** `LayoutTranscript` + `FurnitureRegions`
 
-**Process (Specs):**
-1. Group spans into lines (baseline clustering)
-2. Group lines into paragraphs (gap detection)
-3. Parse outline markers (A., 1., 1.1, etc.)
-4. Build hierarchical AST (Section → Part → Article → Paragraph)
-5. Classify sections (MasterFormat)
+**Status (Specs): COMPLETE (Phase 3 + hardening sprint, April 2026)**
+
+**Segmentation prerequisite** — `crates/engine/src/segment.rs` divides the document into per-section `LayoutTranscript` slices using a footer-oracle algorithm (`FOOTER_Y = 0.90`, `FOOTER_CLUSTER_GAP = 0.05`); parsing operates on one section slice at a time.
+
+**Process (Specs) — implemented in `crates/engine/src/parse.rs`:**
+1. Filter spans to body band (`BODY_Y_MIN = 0.08` – `BODY_Y_MAX = 0.93`), sort by (y ASC, x ASC)
+2. Cluster spans into lines by y-proximity (`LINE_Y_EPSILON = 0.012`)
+3. Classify each line against CSI outline-marker regexes: PART N, N.N TITLE, A. text, 1. text, a. text, 1) text
+4. Fold unclassified lines as continuation text onto the previous structural node
+5. Recovery pass (`inject_missing_parts`): insert synthetic PART nodes when article major number jumps without an explicit PART heading
+6. Build tree from flat item list using level-based child scoping
+7. Output `ParsedDocument` with `SectionAst` → `AstNode` (tag, marker, text, page_index, children)
+
+**Outline levels:**
+
+| Level | Tag | Example |
+|---|---|---|
+| 0 | `Part` | `PART 1`, `PART 2 — PRODUCTS` |
+| 1 | `Article` | `1.1 SUMMARY` |
+| 2 | `Paragraph` | `A. text` |
+| 3 | `SubParagraph` | `1. text` |
+| 4 | `SubSubParagraph` | `a. text` |
+| 5 | `SubSubSubParagraph` | `1) text` |
 
 **Process (Drawings):**
 1. Detect sheets (title block extraction)

@@ -1,7 +1,7 @@
 # Gap Register
 
-**Version:** 1.9.0
-**Date:** April 6, 2026
+**Version:** 2.0.0
+**Date:** April 5, 2026
 **Owner:** HLLMR LLC
 **Status:** ACTIVE
 **Doc Status Tag:** Implemented
@@ -42,7 +42,7 @@ Gap status:
 | G-019 | engine / workflows | (drawing detection boundary) | Title-block table-structure scoring (axis-aligned lines/intersections/rectangles) and deterministic tie-break. **Phase 0.5 note:** `CornerBandCandidate` fields `axis_line_count`, `cell_density`, `score` defined in `tools/src/pattern_model.rs`; runtime population of these fields deferred to Band 1. | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — title-block ROI chosen by deterministic geometry score with diagnostics | Open |
 | G-020 | engine / workflows | (field extraction boundary) | Deterministic sheet number/title extraction inside title-block ROI using pattern + typography + relative-position scoring | MISSING-WIRING | HIGH | `MASTER_PLAN.md` + `ARCHITECTURE.md` — sheet fields must be extracted from ROI with auditable scoring evidence | Open |
 | G-021 | contracts + workflows | (template boundary) | Auto-learned firm/layout template store and schema (`status`, `signature`, relative field bboxes, drift metadata) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` Non-Negotiable #25 — templates are auto-learned internal accelerators | Open |
-| G-022 | engine | (spec parsing boundary) | Deterministic vector-text spec heading detector (line clustering, font/caps/indent/spacing heuristics) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` + `ARCHITECTURE.md` — vector-first deterministic spec heading segmentation | Open |
+| G-022 | engine | `crates/engine/src/parse.rs` | Deterministic vector-text spec heading detector (line clustering, font/caps/indent/spacing heuristics) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` + `ARCHITECTURE.md` — vector-first deterministic spec heading segmentation | **Closed** — Phase 3 implemented full CSI outline parser in `crates/engine/src/parse.rs`: y-proximity line clustering (LINE_Y_EPSILON=0.012), span x-sort, PART/Article/Paragraph/Sub-paragraph regexes with uppercase-title and major≥1 guards, continuation-text folding, `inject_missing_parts` recovery pass. Post-hardening: 7,971 nodes, 0.2% unclassified rate, 0/70 wrong-PART sections. Evidence: `crates/engine/src/parse.rs`, `apps/backend-cli/tests/cli_integration_test.rs` (19/19 pass). |
 | G-023 | workflows + contracts | (fallback boundary) | Explicit opt-in AI fallback contract (low-confidence gate, cropped-region payload manifest, audit markers) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` Non-Negotiable #26 — AI fallback must be explicit, bounded, and non-baseline | Open |
 | G-024 | engine / workflows | (assist boundary) | Local micro-ML runtime integration (on-device inference path, model registry/version pin, deterministic preprocessing) | MISSING-WIRING | MEDIUM | `MASTER_PLAN.md` Non-Negotiable #27 — local micro-ML is assistive, deterministic-bounded, version-locked | Open |
 | G-025 | engine | (confidence boundary) | Deterministic confidence fusion policy (baseline + micro-ML score fusion with auditable branch reason) | MISSING-WIRING | MEDIUM | `ARCHITECTURE.md` — Local Micro-ML Confidence Assist Architecture requires explicit deterministic fusion and provenance | Open |
