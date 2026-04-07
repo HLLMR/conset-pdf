@@ -15,15 +15,21 @@
 //! characters inside those strings are additionally backslash-escaped to avoid
 //! breaking the CSS string literal.
 
-use conset_pdf_ir::{PageSize, RenderConfig, SpecChromeMetadata};
+use conset_pdf_ir::{PageSize, RenderConfig, SectionLayout, SpecChromeMetadata};
 
 /// Assemble a complete HTML document ready for headless-Chrome PDF printing.
 ///
 /// `body_html` is the fragment produced by [`super::body::build_body_html`].
+///
+/// When `layout` is `Some`, the measured `font_size_pt` and `line_gap_norm`
+/// from the source document are used for CSS typography instead of the defaults
+/// in `config`.  Indentation is handled per-node in `body_html` via inline
+/// styles, so @page and body-level CSS here only needs to set the base font.
 pub fn build_full_html(
     body_html: &str,
     chrome: &SpecChromeMetadata,
     config: &RenderConfig,
+    layout: Option<&SectionLayout>,
 ) -> String {
     let (page_w, page_h) = match config.page_size {
         PageSize::Letter => ("8.5in", "11in"),
@@ -40,8 +46,23 @@ pub fn build_full_html(
     let header_css = css_content_string(&header_text);
     let footer_left_css = css_content_string(&footer_left);
 
-    let font = &config.font_family;
-    let font_size = config.font_size_pt;
+    let font = layout
+        .map(|l| l.body_font_name.as_str())
+        .filter(|name| !name.is_empty() && *name != "Unknown")
+        .unwrap_or(&config.font_family)
+        .to_string();
+    // Use measured font size from source PDF when available; fall back to config.
+    let font_size = layout.map(|l| l.font_size_pt).unwrap_or(f64::from(config.font_size_pt));
+    // Derive CSS line-height from measured top-to-top line gap in normalized coords.
+    // line_gap_norm * (11in * 72pt/in) = gap in points; ratio = gap_pt / font_size_pt.
+    // Clamped to [1.1, 2.0] to guard against extreme outliers in the source PDF.
+    let line_height = layout
+        .filter(|l| l.line_gap_norm > 0.0 && font_size > 0.0)
+        .map(|l| {
+            let gap_pt = l.line_gap_norm * (11.0 * 72.0);
+            (gap_pt / font_size).clamp(1.1, 2.0)
+        })
+        .unwrap_or(1.4);
 
     format!(
         r#"<!DOCTYPE html>
@@ -83,7 +104,7 @@ pub fn build_full_html(
 body {{
   font-family: {font};
   font-size: {font_size}pt;
-  line-height: 1.4;
+  line-height: {line_height:.2};
   color: #000;
   margin: 0;
   padding: 0;
@@ -167,6 +188,7 @@ body {{
         footer_left_css = footer_left_css,
         font = font,
         font_size = font_size,
+        line_height = line_height,
         body_html = body_html,
     )
 }
@@ -236,7 +258,7 @@ mod tests {
 
     #[test]
     fn full_html_contains_doctype_and_head() {
-        let html = build_full_html("<div>body</div>", &sample_chrome(), &RenderConfig::default());
+        let html = build_full_html("<div>body</div>", &sample_chrome(), &RenderConfig::default(), None);
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("<head>"));
         assert!(html.contains("</head>"));
@@ -245,7 +267,7 @@ mod tests {
 
     #[test]
     fn full_html_interpolates_chrome_fields() {
-        let html = build_full_html("<div></div>", &sample_chrome(), &RenderConfig::default());
+        let html = build_full_html("<div></div>", &sample_chrome(), &RenderConfig::default(), None);
         assert!(html.contains("RWB Consulting Engineers"));
         assert!(html.contains("Lake Highlands High School"));
         assert!(html.contains("2025-10-17"));
@@ -255,7 +277,7 @@ mod tests {
 
     #[test]
     fn full_html_contains_page_counter_css() {
-        let html = build_full_html("<div></div>", &sample_chrome(), &RenderConfig::default());
+        let html = build_full_html("<div></div>", &sample_chrome(), &RenderConfig::default(), None);
         assert!(html.contains("counter(page)"));
         assert!(html.contains("counter(pages)"));
     }
@@ -276,7 +298,7 @@ mod tests {
     #[test]
     fn empty_chrome_fields_produce_valid_html() {
         let chrome = SpecChromeMetadata::default();
-        let html = build_full_html("<div></div>", &chrome, &RenderConfig::default());
+        let html = build_full_html("<div></div>", &chrome, &RenderConfig::default(), None);
         // Should not panic and should produce a valid HTML skeleton.
         assert!(html.contains("<!DOCTYPE html>"));
     }
@@ -285,7 +307,7 @@ mod tests {
     fn a4_page_size_uses_mm_units() {
         let mut cfg = RenderConfig::default();
         cfg.page_size = conset_pdf_ir::PageSize::A4;
-        let html = build_full_html("<div></div>", &sample_chrome(), &cfg);
+        let html = build_full_html("<div></div>", &sample_chrome(), &cfg, None);
         assert!(html.contains("210mm"));
         assert!(html.contains("297mm"));
     }

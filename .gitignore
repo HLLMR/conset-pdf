@@ -29,6 +29,7 @@ Desktop.ini
 /output/
 /tmp/
 /audit_output/
+/apps/backend-cli/audit_output/
 
 # Temporary files
 *.tmp

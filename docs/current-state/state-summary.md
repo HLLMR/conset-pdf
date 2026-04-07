@@ -1,6 +1,6 @@
 # Current State Summary
 
-**Version:** 2.6.0
+**Version:** 2.8.0
 **Date:** April 6, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
@@ -50,6 +50,9 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 - Phase 4 complete (April 5, 2026): `SectionEditor` edit engine in `crates/engine/src/edit.rs` (27/27 unit tests); `crates/ir/src/edit.rs` IR types (8/8 unit tests); `edit` CLI subcommand in `apps/backend-cli`; `WorkflowOperation::Edit` contract variant; all 7 CLI handlers confirmed emitting `OperationStarted`/`OperationEnded` audit events (G-006 closed); G-003 accepted-closed; 26/26 integration tests pass. See `CHANGELOG.md` for full detail.
 
 - Phase 5 complete (April 6, 2026): Section regeneration pipeline implemented. `crates/ir/src/render.rs` — `SpecChromeMetadata`, `RenderConfig`, `PageSize`, `RenderResult`, `RenderError` IR types; `crates/engine/src/render/` — `body.rs` (AST→HTML fragment, 7 OutlineTag CSS classes), `chrome.rs` (full HTML with CSS `@page` margin-box rules for running headers/footers), `chrome_pdf.rs` (Chrome subprocess renderer with `CHROME_PATH`/system-path discovery), `mod.rs` (`SectionRenderer` public API + `dry_run()`); `regenerate` CLI subcommand with `--ast`, `--chrome-metadata`, `--output`, `--section`, `--dry-run`, `--font`, `--font-size`; `WorkflowOperation::Regenerate` contract variant; G-008 accepted-closed (no defined consumer); G-010 closed (4 behavioral audit tests added). 30/30 integration tests pass (4 Phase 5 non-Chrome tests added, 1 Chrome test ignored). See `CHANGELOG.md`.
+
+- Phase 5 supplement: Layout geometry capture (April 6, 2026): `SectionLayout` struct added to `crates/ir/src/ast.rs` with `body_left`, `body_right`, `font_size_pt`, `line_gap_norm` fields; `x_indent: f64` added to `AstNode`; both fields are `#[serde(default)]` for backward compatibility. `parse.rs` now populates these from raw span geometry during `parse_section()` via `compute_section_layout()` and `median_val()` helpers; `cluster_lines()` returns x_min as a third tuple element; `classify_lines()` and `build_tree()` propagate it through to `AstNode`. `build_body_html()` and `build_full_html()` updated to accept `Option<&SectionLayout>` and use measured values for inline CSS `margin-left`, `font-size`, and `line-height` when layout data is present. Render pipeline threads `ast.layout.as_ref()` through both builders. All 30/30 integration + 43/43 engine unit + 13/13 IR unit tests pass. See `CHANGELOG.md`.
+- Phase 5.5 supplement: Font typography extraction (April 6, 2026): `SpanData` extended with `font_weight: f32` (from `PdfFontWeight` enum via `text_obj.font().weight()`) and `is_italic: bool` (from `text_obj.font().is_italic()`); both wired into `Span` IR type (`font_weight` was previously hardcoded to 400, `is_italic` is a new field with `#[serde(default)]`). `SectionLayout` gains `body_font_name: String` — the modal (most-frequent) font family name among body spans, computed by new `modal_font_name()` helper; `#[serde(default)]` defaults to `"Unknown"`. `build_full_html()` now uses `body_font_name` as the CSS `font-family` when it is a real name, falling back to `config.font_family`. All 30/30 integration + 43/43 engine unit + 13/13 IR unit tests pass. See `CHANGELOG.md`.
 
 ## Next Focus
 

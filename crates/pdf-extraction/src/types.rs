@@ -56,6 +56,11 @@ pub struct SpanData {
     pub font_size: f32,
     /// Font family name as reported by PDFium.
     pub font_name: String,
+    /// Font weight (100–900); 400 = normal, 700 = bold.  Defaults to 400 when
+    /// PDFium cannot determine the weight.
+    pub font_weight: f32,
+    /// Whether the font is italic/oblique as reported by PDFium.
+    pub is_italic: bool,
 }
 
 /// Extracted data from a single PDF page.

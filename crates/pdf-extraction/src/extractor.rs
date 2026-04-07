@@ -241,6 +241,22 @@ impl PdfExtractor for PdfiumExtractor {
 
                 let font_size = text_obj.scaled_font_size().value;
                 let font_name = text_obj.font().name();
+                let font_weight = match text_obj.font().weight() {
+                    Ok(w) => match w {
+                        PdfFontWeight::Weight100 => 100.0_f32,
+                        PdfFontWeight::Weight200 => 200.0,
+                        PdfFontWeight::Weight300 => 300.0,
+                        PdfFontWeight::Weight400Normal => 400.0,
+                        PdfFontWeight::Weight500 => 500.0,
+                        PdfFontWeight::Weight600 => 600.0,
+                        PdfFontWeight::Weight700Bold => 700.0,
+                        PdfFontWeight::Weight800 => 800.0,
+                        PdfFontWeight::Weight900 => 900.0,
+                        PdfFontWeight::Custom(v) => v as f32,
+                    },
+                    Err(_) => 400.0,
+                };
+                let is_italic = text_obj.font().is_italic();
 
                 // bounds() returns PdfQuadPoints in PDF coordinates (bottom-left origin).
                 let bbox = match object.bounds() {
@@ -259,7 +275,7 @@ impl PdfExtractor for PdfiumExtractor {
                     }
                 };
 
-                spans.push(crate::types::SpanData { text, bbox, font_size, font_name });
+                spans.push(crate::types::SpanData { text, bbox, font_size, font_name, font_weight, is_italic });
             }
         }
 

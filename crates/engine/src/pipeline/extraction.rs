@@ -79,6 +79,8 @@ pub fn run(path: &str) -> Result<LayoutTranscript> {
             match Span::new(&span_data.text, normalized, f64::from(span_data.font_size)) {
                 Ok(mut span) => {
                     span.font_name = span_data.font_name.clone();
+                    span.font_weight = f64::from(span_data.font_weight);
+                    span.is_italic = span_data.is_italic;
                     page.add_span(span).map_err(|e| {
                         EngineError::extraction(format!(
                             "Failed to add span to page {page_index}: {e:?}"

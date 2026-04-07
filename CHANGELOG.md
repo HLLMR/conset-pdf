@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-06] Font Typography Extraction (Phase 5.5 Supplement)
+
+### Added
+
+- **`font_weight: f32` and `is_italic: bool` on `SpanData`** (`crates/pdf-extraction/src/types.rs`): PDFium now populates `font_weight` via `text_obj.font().weight()` (matching against `PdfFontWeight` enum variants → f32 value 100–900; defaults to 400 when PDFium returns an error) and `is_italic` via `text_obj.font().is_italic()`. These represent actual values from the source PDF's font metadata.
+- **`font_weight: f64` wired through extraction pipeline** (`crates/engine/src/pipeline/extraction.rs`): `span.font_weight` is now set from `f64::from(span_data.font_weight)` in addition to the existing `span.font_name` assignment. Previously `font_weight` was always hardcoded to 400.
+- **`is_italic: bool` on `Span` IR type** (`crates/ir/src/types.rs`): New field with `#[serde(default)]` (defaults `false`); set from `span_data.is_italic` in the extraction pipeline. `Span::new()` initializes it to `false`.
+- **`body_font_name: String` on `SectionLayout`** (`crates/ir/src/ast.rs`): Modal (most-frequent) font family name among body spans in the section, as reported by PDFium. Uses `#[serde(default = "default_font_name")]` for backward compatibility (defaults to `"Unknown"` when deserializing older AST JSON files).
+- **`modal_font_name()` helper in `parse.rs`** (`crates/engine/src/parse.rs`): Computes the most-frequent font name from a slice using a `HashMap<&str, usize>` frequency count. `parse_section()` now collects `font_names: Vec<String>` from body spans and passes them to `compute_section_layout()`.
+- **`body_font_name` used in `build_full_html()`** (`crates/engine/src/render/chrome.rs`): When `layout` is `Some` and `body_font_name` is not `"Unknown"` or empty, it replaces `config.font_family` as the CSS `font-family`. Falls back to `config.font_family` for sessions with no extractable font metadata.
+
+### Backward Compatibility
+
+- `Span.is_italic` and `SectionLayout.body_font_name` both carry `#[serde(default)]` — existing serialized transcript and AST JSON files deserialize without errors.
+- `SpanData.font_weight` and `SpanData.is_italic` are new required fields; any code constructing `SpanData` struct literals directly (e.g. in extractor tests) must be updated.
+
+---
+
+## [2026-04-06] Layout Geometry Capture (Phase 5 Supplement)
+
+### Added
+
+- **`SectionLayout` IR type** (`crates/ir/src/ast.rs`): New struct capturing measured PDF geometry for a parsed section — `body_left` (normalized x of leftmost body span, i.e. the physical left text margin), `body_right` (normalized x of rightmost span right-edge), `font_size_pt` (median font size in points from source PDF spans), `line_gap_norm` (median top-to-top y distance between consecutive lines in normalized coordinates). Exported from `crates/ir/src/lib.rs` as a public type.
+- **`x_indent: f64` on `AstNode`** (`crates/ir/src/ast.rs`): Normalized x position of the leftmost span on that node's first line. Populated by the parser from span geometry; `#[serde(default)]` so existing serialized `ast.json` files remain fully compatible.
+- **`layout: Option<SectionLayout>` on `SectionAst`** (`crates/ir/src/ast.rs`): Measured geometry attached to each section at parse time. `None` when fewer than two body spans are found (empty or title-only sections). `#[serde(default)]` for full backward compatibility.
+- **Layout geometry computation in `parse.rs`** (`crates/engine/src/parse.rs`): `parse_section()` now collects body-span raw data (x, right-edge, font size, y) across all pages of the section and calls `compute_section_layout()` to produce a `SectionLayout`. New helpers: `compute_section_layout(x_vals, x_right_vals, font_sizes, span_ys) -> Option<SectionLayout>` using `f64::min`/`f64::max` for left/right marginss and `median_val()` for font size and line-gap statistics; `median_val(vals: &[f64]) -> f64` (sort + midpoint).
+- **`x_indent` propagation in `cluster_lines()` and `classify_lines()`** (`crates/engine/src/parse.rs`): `cluster_lines()` now returns `Vec<(String, usize, f64)>` — the third element is the `bbox.x` of the leftmost span on that line after x-sort. `classify_lines()` writes it into `FlatItem.x_indent`; `build_tree()` carries it through to `AstNode.x_indent`.
+- **Measured margin-left in `build_body_html()`** (`crates/engine/src/render/body.rs`): Function signature extended to `build_body_html(ast, config, layout: Option<&SectionLayout>)`. When `layout` is `Some` and `node.x_indent > 0.0`, an inline `style="margin-left: X.XXXin"` is emitted using `(node.x_indent - layout.body_left) * 8.5` (scales normalized coords to CSS inches on an 8.5 in page). Falls back silently to CSS-class-only output when `layout` is `None`.
+- **Measured font size and line-height in `build_full_html()`** (`crates/engine/src/render/chrome.rs`): Function signature extended to `build_full_html(body, chrome, config, layout: Option<&SectionLayout>)`. When `layout` is `Some`, `font_size_pt` replaces `config.font_size_pt` as the CSS `font-size`; `line_gap_norm * (11 * 72)` is converted to a CSS `line-height` ratio (clamped 1.1–2.0), replacing the hardcoded 1.4. Falls back to config defaults when `layout` is `None`.
+- **`ast.layout.as_ref()` threaded in `SectionRenderer`** (`crates/engine/src/render/mod.rs`): Both `render()` and `dry_run()` pass `ast.layout.as_ref()` to both `build_body_html` and `build_full_html`.
+
+### Backward Compatibility
+
+- Existing `ast.json` files with no `x_indent` or `layout` fields deserialize correctly via `#[serde(default)]`.
+- All 30 non-Chrome integration tests pass; 43/43 engine unit tests pass; 13/13 IR unit tests pass.
+
+---
+
 ## [2026-04-06] Phase 5 Complete: Section Regeneration
 
 ### Added

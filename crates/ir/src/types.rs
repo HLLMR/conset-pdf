@@ -190,6 +190,9 @@ pub struct Span {
     pub font_weight: f64,
     /// Font color as hex string (e.g., "#000000" for black).
     pub font_color: String,
+    /// Whether the font is italic or oblique as reported by PDFium.
+    #[serde(default)]
+    pub is_italic: bool,
 }
 
 impl Span {
@@ -244,6 +247,7 @@ impl Span {
             font_size,
             font_weight: 400.0,
             font_color: "#000000".to_string(),
+            is_italic: false,
         })
     }
 }

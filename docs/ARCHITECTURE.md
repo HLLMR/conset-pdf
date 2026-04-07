@@ -1,6 +1,6 @@
 # Conset PDF: Architecture
 
-**Version:** 4.4.0  
+**Version:** 4.6.0  
 **Date:** April 6, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
@@ -175,9 +175,9 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 - `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast commands with typed audit bundles. All 8 handlers emit `OperationStarted`/`OperationEnded` audit events.
 - `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes working pipeline stages through Phase 5: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, and render pipeline (`render/`) converting `SectionAst` → HTML fragment → full HTML with CSS `@page` margin boxes → PDF bytes via Chromium subprocess.
+- `crates/engine` exposes working pipeline stages through Phase 5 + layout geometry supplement: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, and render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess.
 - `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
-- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs, `EditOperation`/`EditRequest`, and Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`); validation enforced.
+- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, and Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`); `Span` now carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
 - `crates/audit` models and persistence implemented; all handlers emit audit events (G-006 closed).
 
 Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
@@ -214,7 +214,7 @@ conset-pdf/
 │   │   └── src/
 │   │       ├── layout.rs       # LayoutTranscript, Page, Span, BBox
 │   │       ├── segment.rs      # SegmentIndex, SectionEntry
-│   │       ├── ast.rs          # ParsedDocument, SectionAst, AstNode, OutlineTag
+│   │       ├── ast.rs          # ParsedDocument, SectionAst (layout: Option<SectionLayout>), AstNode (x_indent), OutlineTag, SectionLayout
 │   │       ├── edit.rs         # NodePath, EditOperation, EditRequest, EditResult, EditError
 │   │       ├── render.rs       # SpecChromeMetadata, RenderConfig, PageSize, RenderResult, RenderError
 │   │       └── validation.rs   # Coordinator: validate_transcript()
@@ -435,7 +435,7 @@ The stage contracts below define the target behavior. Current implementation sta
 4. Fold unclassified lines as continuation text onto the previous structural node
 5. Recovery pass (`inject_missing_parts`): insert synthetic PART nodes when article major number jumps without an explicit PART heading
 6. Build tree from flat item list using level-based child scoping
-7. Output `ParsedDocument` with `SectionAst` → `AstNode` (tag, marker, text, page_index, children)
+7. Output `ParsedDocument` with `SectionAst` → `AstNode` (tag, marker, text, page_index, level, x_indent, children); `SectionAst.layout` captures `SectionLayout` (body_left, body_right, font_size_pt, line_gap_norm, body_font_name) derived from median/min/max of body-span geometry and modal font name
 
 **Outline levels:**
 
@@ -483,8 +483,8 @@ The stage contracts below define the target behavior. Current implementation sta
 **Input:** `EditableDocModel` + `ChromeMetadata`
 
 **Process (Specs):**
-1. Render AST to HTML/CSS
-2. Apply chrome template (headers/footers with metadata)
+1. Render AST to HTML/CSS — `build_body_html()` emits per-node inline `margin-left` from `AstNode.x_indent` relative to `SectionLayout.body_left`; falls back to CSS-class-only indentation when layout is absent
+2. Apply chrome template (headers/footers with metadata) — `build_full_html()` uses `SectionLayout.font_size_pt` for `font-size`, derives `line-height` from `SectionLayout.line_gap_norm`, and uses `SectionLayout.body_font_name` for `font-family` when it is a real name; falls back to `RenderConfig` defaults
 3. Convert HTML to PDF (headless Chrome)
 4. Validate output (page count, formatting)
 

@@ -217,6 +217,7 @@ mod tests {
             text: text.to_string(),
             page_index: 0,
             level,
+            x_indent: 0.0,
             children: vec![],
         }
     }

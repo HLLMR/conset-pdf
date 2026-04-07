@@ -377,7 +377,7 @@ mod tests {
     // ── Fixture builders ──────────────────────────────────────────────────────
 
     fn node(tag: OutlineTag, marker: &str, text: &str, level: u8, children: Vec<AstNode>) -> AstNode {
-        AstNode { tag, marker: marker.into(), text: text.into(), page_index: 0, level, children }
+        AstNode { tag, marker: marker.into(), text: text.into(), page_index: 0, level, x_indent: 0.0, children }
     }
 
     fn part(num: u32, children: Vec<AstNode>) -> AstNode {
@@ -449,6 +449,7 @@ mod tests {
                 part(3, vec![article(3, 1, vec![])]),
             ],
             parse_warnings: vec![],
+            layout: None,
         }
     }
 

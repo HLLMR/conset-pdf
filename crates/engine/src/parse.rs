@@ -31,7 +31,7 @@
 //! | 5 | `N) text` | `1) Note …` |
 
 use crate::error::Result;
-use conset_pdf_ir::{AstNode, OutlineTag, ParsedDocument, SectionAst, SegmentIndex, LayoutTranscript};
+use conset_pdf_ir::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout, SegmentIndex, LayoutTranscript};
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -100,6 +100,8 @@ struct FlatItem {
     text: String,
     page_index: usize,
     level: u8,
+    /// Normalized x position of the leftmost span on this item's line.
+    x_indent: f64,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -148,7 +150,14 @@ fn parse_section(
     entry: &conset_pdf_ir::SectionEntry,
 ) -> SectionAst {
     let pages = transcript.pages();
-    let mut all_lines: Vec<(String, usize)> = Vec::new();
+    let mut all_lines: Vec<(String, usize, f64)> = Vec::new();
+
+    // Span data collected for SectionLayout computation.
+    let mut x_vals: Vec<f64> = Vec::new();
+    let mut x_right_vals: Vec<f64> = Vec::new();
+    let mut font_sizes: Vec<f64> = Vec::new();
+    let mut span_ys: Vec<f64> = Vec::new();
+    let mut font_names: Vec<String> = Vec::new();
 
     for page_idx in entry.start_page..=entry.end_page {
         if let Some(page) = pages.get(page_idx) {
@@ -169,9 +178,21 @@ fn parse_section(
                             .unwrap_or(std::cmp::Ordering::Equal),
                     )
             });
+
+            // Collect raw span data for layout geometry.
+            for s in &body_spans {
+                x_vals.push(s.bbox.x);
+                x_right_vals.push(s.bbox.x + s.bbox.width);
+                font_sizes.push(s.font_size);
+                span_ys.push(s.bbox.y);
+                font_names.push(s.font_name.clone());
+            }
+
             all_lines.extend(cluster_lines(&body_spans, page_idx));
         }
     }
+
+    let layout = compute_section_layout(&x_vals, &x_right_vals, &font_sizes, &span_ys, &font_names);
 
     let flat_items = classify_lines(&all_lines);
     let flat_items = inject_missing_parts(flat_items);
@@ -184,6 +205,7 @@ fn parse_section(
         end_page: entry.end_page,
         nodes,
         parse_warnings: Vec::new(),
+        layout,
     }
 }
 
@@ -193,15 +215,18 @@ fn parse_section(
 ///
 /// Spans are assumed to be pre-sorted by (y, x).  Within each line the span
 /// texts are joined with a single space.
+///
+/// Returns `(text, page_index, x_min)` where `x_min` is the normalized x
+/// coordinate of the leftmost span on the line — used to measure indentation.
 fn cluster_lines(
     spans: &[&conset_pdf_ir::Span],
     page_index: usize,
-) -> Vec<(String, usize)> {
-    let mut lines: Vec<(String, usize)> = Vec::new();
+) -> Vec<(String, usize, f64)> {
+    let mut lines: Vec<(String, usize, f64)> = Vec::new();
     let mut current_line: Vec<&&conset_pdf_ir::Span> = Vec::new();
     let mut line_y_start: Option<f64> = None;
 
-    let flush = |line: &[&&conset_pdf_ir::Span], lines: &mut Vec<(String, usize)>| {
+    let flush = |line: &[&&conset_pdf_ir::Span], lines: &mut Vec<(String, usize, f64)>| {
         if line.is_empty() {
             return;
         }
@@ -213,9 +238,11 @@ fn cluster_lines(
                 .partial_cmp(&b.bbox.x)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        // After sorting by x, the first span has the minimum x — the leftmost indent.
+        let x_min = sorted.first().map_or(0.0, |s| s.bbox.x);
         let text = sorted.iter().map(|s| s.text.trim()).collect::<Vec<_>>().join(" ");
         if !text.is_empty() {
-            lines.push((text, page_index));
+            lines.push((text, page_index, x_min));
         }
     };
 
@@ -243,16 +270,17 @@ fn cluster_lines(
 
 // ── Outline classification ────────────────────────────────────────────────────
 
-/// Classifies a list of `(text, page_index)` pairs into structural `FlatItem`s.
+/// Classifies a list of `(text, page_index, x_indent)` pairs into structural `FlatItem`s.
 ///
 /// Lines that do not match any outline pattern are folded into the text of the
 /// previously emitted structural item.  This handles wrapped paragraph text
 /// without creating spurious Unclassified nodes.
-fn classify_lines(lines: &[(String, usize)]) -> Vec<FlatItem> {
+fn classify_lines(lines: &[(String, usize, f64)]) -> Vec<FlatItem> {
     let mut items: Vec<FlatItem> = Vec::new();
 
-    for (text, page_index) in lines {
-        if let Some(item) = try_classify(text, *page_index) {
+    for (text, page_index, x_indent) in lines {
+        if let Some(mut item) = try_classify(text, *page_index) {
+            item.x_indent = *x_indent;
             items.push(item);
         } else if !text.trim().is_empty() {
             // Continuation: append to previous structural node if available.
@@ -274,6 +302,7 @@ fn classify_lines(lines: &[(String, usize)]) -> Vec<FlatItem> {
                         text: text.trim().to_owned(),
                         page_index: *page_index,
                         level: 0,
+                        x_indent: *x_indent,
                     });
                 }
             }
@@ -286,6 +315,8 @@ fn classify_lines(lines: &[(String, usize)]) -> Vec<FlatItem> {
 /// Attempt to match `text` against the CSI outline-marker patterns.
 ///
 /// Returns `None` when the line is a continuation, not a structural marker.
+/// The `x_indent` field on the returned item is always `0.0`; callers must
+/// overwrite it with the measured value after this function returns.
 fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
     let t = text.trim();
 
@@ -299,6 +330,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: title.to_owned(),
             page_index,
             level: 0,
+            x_indent: 0.0,
         });
     }
 
@@ -310,6 +342,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: caps[2].trim().to_owned(),
             page_index,
             level: 1,
+            x_indent: 0.0,
         });
     }
 
@@ -321,6 +354,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: caps[2].trim().to_owned(),
             page_index,
             level: 2,
+            x_indent: 0.0,
         });
     }
 
@@ -332,6 +366,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: caps[2].trim().to_owned(),
             page_index,
             level: 3,
+            x_indent: 0.0,
         });
     }
 
@@ -343,6 +378,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: caps[2].trim().to_owned(),
             page_index,
             level: 4,
+            x_indent: 0.0,
         });
     }
 
@@ -354,6 +390,7 @@ fn try_classify(text: &str, page_index: usize) -> Option<FlatItem> {
             text: caps[2].trim().to_owned(),
             page_index,
             level: 5,
+            x_indent: 0.0,
         });
     }
 
@@ -407,6 +444,7 @@ fn inject_missing_parts(items: Vec<FlatItem>) -> Vec<FlatItem> {
                         text: String::new(),
                         page_index: item.page_index,
                         level: 0,
+                        x_indent: 0.0,
                     });
                     current_part = Some(art_part);
                 }
@@ -454,6 +492,7 @@ fn build_tree(items: &[FlatItem]) -> Vec<AstNode> {
             text: item.text.clone(),
             page_index: item.page_index,
             level: item.level,
+            x_indent: item.x_indent,
             children,
         });
 
@@ -461,4 +500,82 @@ fn build_tree(items: &[FlatItem]) -> Vec<AstNode> {
     }
 
     result
+}
+
+// ── Layout geometry computation ───────────────────────────────────────────────
+
+/// Computes [`SectionLayout`] from raw body-span data collected during parsing.
+///
+/// Returns `None` when fewer than two spans are available (empty / title-only
+/// sections have no meaningful layout geometry).
+fn compute_section_layout(
+    x_vals: &[f64],
+    x_right_vals: &[f64],
+    font_sizes: &[f64],
+    span_ys: &[f64],
+    font_names: &[String],
+) -> Option<SectionLayout> {
+    if x_vals.len() < 2 {
+        return None;
+    }
+
+    let body_left = x_vals.iter().copied().fold(f64::INFINITY, f64::min);
+    let body_right = x_right_vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let font_size_pt = median_val(font_sizes);
+
+    // Compute the modal (most-frequent) font family name.
+    let body_font_name = modal_font_name(font_names);
+
+    // Compute line gaps: sort unique y values (one per visual line), then take
+    // differences between consecutive lines.
+    let mut sorted_ys = span_ys.to_vec();
+    sorted_ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut line_ys: Vec<f64> = Vec::new();
+    let mut prev_y: Option<f64> = None;
+    for y in sorted_ys {
+        match prev_y {
+            None => { prev_y = Some(y); line_ys.push(y); }
+            Some(py) if (y - py).abs() > LINE_Y_EPSILON => { prev_y = Some(y); line_ys.push(y); }
+            _ => {}
+        }
+    }
+
+    let gaps: Vec<f64> = line_ys.windows(2).map(|w| w[1] - w[0]).collect();
+    let line_gap_norm = if gaps.is_empty() { 0.0 } else { median_val(&gaps) };
+
+    Some(SectionLayout { body_left, body_right, font_size_pt, line_gap_norm, body_font_name })
+}
+
+/// Returns the most-frequent font name from a slice of names.
+/// Falls back to `"Unknown"` for an empty slice.
+fn modal_font_name(names: &[String]) -> String {
+    use std::collections::HashMap;
+    if names.is_empty() {
+        return "Unknown".to_string();
+    }
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for name in names {
+        *counts.entry(name.as_str()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
+/// Returns the median of a non-empty slice.  Returns `0.0` for an empty slice.
+fn median_val(vals: &[f64]) -> f64 {
+    if vals.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = vals.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len();
+    if n % 2 == 0 {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    } else {
+        sorted[n / 2]
+    }
 }

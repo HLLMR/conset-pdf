@@ -29,7 +29,7 @@ pub mod types;
 pub mod validation;
 
 // Re-export main types for convenience
-pub use ast::{AstNode, OutlineTag, ParsedDocument, SectionAst};
+pub use ast::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout};
 pub use edit::{EditError, EditOperation, EditRequest, EditResult, NodePath};
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
 pub use render::{PageSize, RenderConfig, RenderError, RenderResult, SpecChromeMetadata};

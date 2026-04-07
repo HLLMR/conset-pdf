@@ -17,6 +17,10 @@
 
 use serde::{Deserialize, Serialize};
 
+fn default_font_name() -> String {
+    "Unknown".to_string()
+}
+
 /// Classification of a node in the CSI 3-part section outline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,6 +59,35 @@ pub struct AstNode {
     pub level: u8,
     /// Child nodes in the outline tree.
     pub children: Vec<AstNode>,
+    /// Normalized x position (0.0–1.0) of the leftmost span on this node's first line.
+    /// Used to compute per-level indentation for layout-geometry-aware rendering.
+    /// Defaults to `0.0` for synthetic nodes and when deserializing older AST JSON files.
+    #[serde(default)]
+    pub x_indent: f64,
+}
+
+/// Measured layout geometry for a parsed section.
+///
+/// Computed from the raw span positions during parsing; used by the render
+/// pipeline to produce accurately indented PDF output rather than relying on
+/// hardcoded CSS values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SectionLayout {
+    /// Normalized x coordinate (0.0–1.0) of the leftmost body span — i.e. the
+    /// physical left margin of the section's text block on the page.
+    pub body_left: f64,
+    /// Normalized x coordinate of the rightmost body span's right edge.
+    pub body_right: f64,
+    /// Median font size of body spans, in points (original PDF scale).
+    pub font_size_pt: f64,
+    /// Median top-to-top y distance between consecutive lines, in normalized
+    /// page coordinates.  Multiply by `11.0 * 72.0` to get points on Letter.
+    pub line_gap_norm: f64,
+    /// Modal (most-frequent) font family name among body spans, as reported by
+    /// PDFium.  Used by the renderer to match the source document's typeface.
+    /// Defaults to `"Unknown"` for sections with no extractable font metadata.
+    #[serde(default = "default_font_name")]
+    pub body_font_name: String,
 }
 
 /// The parsed AST for a single CSI section.
@@ -72,6 +105,10 @@ pub struct SectionAst {
     pub nodes: Vec<AstNode>,
     /// Non-fatal issues encountered while parsing this section.
     pub parse_warnings: Vec<String>,
+    /// Measured layout geometry for this section, or `None` if fewer than two
+    /// body spans were found (e.g. empty or title-only sections).
+    #[serde(default)]
+    pub layout: Option<SectionLayout>,
 }
 
 /// The complete parsed AST for a document, covering all segmented sections.

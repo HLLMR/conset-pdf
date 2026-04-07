@@ -1,5 +1,5 @@
 # Conset PDF: Master Plan
-**Version:** 4.5.0 (Phase 5 Complete: Section Regeneration)  
+**Version:** 4.6.0 (Phase 5 + Layout Geometry Capture + Font Typography Extraction)  
 **Date:** April 6, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
@@ -894,6 +894,8 @@ Phase 4: Edit Operations (Week 10) ← COMPLETE
     ↓
 Phase 5: Regeneration (Weeks 11-12) ← COMPLETE
     ↓
+Phase 5.5: Layout Geometry + Font Typography (supplement) ← COMPLETE
+    ↓
 Phase 6: PDF Stitching (Week 13) ← NEXT
     ↓
 Phase 7: End-to-End (Week 14) ← ALPHA COMPLETE
@@ -1264,6 +1266,47 @@ cargo run --bin backend-cli -- regenerate \
 - ✅ 4/4 non-Chrome integration tests pass (dry-run, missing-AST, missing-section, invalid-chrome-metadata)
 - ✅ Full Chromium round-trip test (`cli_regenerate_produces_pdf`) passes using Brave browser (42 s, real SPEC PDF rendered to `%PDF`-valid output)
 - ✅ Visual inspection of output PDF: headers/footers with CSS `@page` margin boxes confirmed present
+
+---
+
+### Phase 5.5 — Layout Geometry Capture (Supplement) (April 6, 2026)
+
+**Goal:** Thread per-line x-position, per-section typography measurements, and full font metadata (weight, italic flag, dominant typeface) from extraction and parse stages through the render pipeline, replacing hardcoded CSS values with measured ones.
+
+**Status: COMPLETE — April 6, 2026.**
+
+**Motivation:** The original Phase 5 renderer used hardcoded indentation levels and a `config.font_size_pt` scalar. Additionally, `Span.font_weight` was silently hardcoded to 400 even though PDFium exposes actual weight values, and italic/typeface information was discarded at extraction time. Capturing all available typographic metadata makes rendered output faithful to the original's indentation, typography, and typeface.
+
+**Deliverables:**
+- ✅ `SectionLayout` struct added to `crates/ir/src/ast.rs` — `body_left: f64`, `body_right: f64`, `font_size_pt: f64`, `line_gap_norm: f64`; derived as median-aggregated measurements of body spans within a section
+- ✅ `x_indent: f64` field added to `AstNode` — leftmost span x-coordinate for the visual line; `#[serde(default)]` for backward compatibility
+- ✅ `layout: Option<SectionLayout>` field added to `SectionAst` — `#[serde(default)]` for backward compatibility; populated during parsing
+- ✅ `cluster_lines()` in `crates/engine/src/parse.rs` extended to return `(text, page_index, x_min)` — `x_min` is the leftmost bbox.x of all spans on the line
+- ✅ `compute_section_layout()` helper added to `parse.rs` — derives `SectionLayout` from body spans using median font size, min/max x-range, median normalized y-gap, and modal font name via `modal_font_name()`
+- ✅ `modal_font_name()` helper added to `parse.rs` — frequency-counts font names via `HashMap`, returns most-frequent; used to populate `SectionLayout.body_font_name`
+- ✅ `font_weight: f32` and `is_italic: bool` added to `SpanData` (`crates/pdf-extraction/src/types.rs`) — `font_weight` from `text_obj.font().weight()` (`PdfFontWeight` enum → f32 100–900; default 400 on error); `is_italic` from `text_obj.font().is_italic()`; previously neither was extracted
+- ✅ `is_italic: bool` added to `Span` IR type (`crates/ir/src/types.rs`) — `#[serde(default)]`; `Span::new()` initializes to `false`; populated by `span.is_italic = span_data.is_italic` in extraction pipeline
+- ✅ `Span.font_weight` wired — was hardcoded to 400 in `Span::new()` and never overwritten; now set from `f64::from(span_data.font_weight)` in `crates/engine/src/pipeline/extraction.rs`
+- ✅ `body_font_name: String` added to `SectionLayout` — modal font family name among body spans; `#[serde(default = "default_font_name")]` defaults to `"Unknown"` for backward compatibility
+- ✅ `build_full_html()` uses `SectionLayout.body_font_name` for CSS `font-family` when it is a real name (not `"Unknown"`); falls back to `config.font_family`
+- ✅ `build_body_html()` in `crates/engine/src/render/body.rs` accepts `layout: Option<&SectionLayout>` — emits `style="margin-left: Xin"` inline CSS per node using `(x_indent - body_left) * 8.5` mapping
+- ✅ `build_full_html()` in `crates/engine/src/render/chrome.rs` accepts `layout: Option<&SectionLayout>` — uses `layout.font_size_pt` for CSS `font-size` and derives `line-height` as `1.0 + line_gap_norm * 6.0`; falls back to `config.font_size_pt` / 1.4 when no layout present
+- ✅ `SectionLayout` exported from `crates/ir/src/lib.rs`
+- ✅ D-032 + D-033 recorded in decision-log: measured geometry and font typography extraction; serde defaults maintain backward compatibility with existing JSON artifacts
+
+**Test:**
+All existing 30/30 integration tests and 43+13 unit tests pass unchanged — backward-compatible serde defaults mean no fixture updates were required.
+
+**Definition of Done:**
+- ✅ `SectionAst.layout` populated for every section parsed from a real PDF, including `body_font_name`
+- ✅ `AstNode.x_indent` populated for every node
+- ✅ `Span.font_weight` reflects actual PDFium-reported weight (no longer hardcoded 400)
+- ✅ `Span.is_italic` reflects actual PDFium-reported italic flag
+- ✅ `build_body_html()` emits measured `margin-left` per node
+- ✅ `build_full_html()` uses measured `font-size`, `line-height`, and `font-family` when layout is present
+- ✅ All call sites updated (`render/mod.rs`, test fixtures in `edit.rs` for both engine and IR crates)
+- ✅ Backward-compatible: all new fields use `#[serde(default)]`; existing JSON files deserialize without error
+- ✅ 30/30 CLI integration tests pass; 43/43 engine unit tests pass; 13/13 IR unit tests pass
 
 ---
 

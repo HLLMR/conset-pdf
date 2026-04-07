@@ -47,10 +47,10 @@ impl SectionRenderer {
         chrome_meta: &SpecChromeMetadata,
     ) -> Result<RenderResult, RenderError> {
         // Stage 1: AST → HTML body fragment.
-        let body_html = body::build_body_html(ast, &self.config);
+        let body_html = body::build_body_html(ast, &self.config, ast.layout.as_ref());
 
         // Stage 2: Wrap with <head>, CSS, @page rules.
-        let full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config);
+        let full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config, ast.layout.as_ref());
 
         // Stage 3: HTML → PDF via Chrome subprocess.
         let pdf_bytes = chrome_pdf::render_html_to_pdf(&full_html)?;
@@ -71,8 +71,8 @@ impl SectionRenderer {
         ast: &SectionAst,
         chrome_meta: &SpecChromeMetadata,
     ) -> RenderResult {
-        let body_html = body::build_body_html(ast, &self.config);
-        let _full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config);
+        let body_html = body::build_body_html(ast, &self.config, ast.layout.as_ref());
+        let _full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config, ast.layout.as_ref());
         RenderResult {
             pdf_bytes: Vec::new(),
             page_count_estimate: 0,
@@ -120,9 +120,11 @@ mod tests {
                 text: "GENERAL".to_owned(),
                 page_index: 0,
                 level: 0,
+                x_indent: 0.0,
                 children: vec![],
             }],
             parse_warnings: vec![],
+            layout: None,
         }
     }
 
