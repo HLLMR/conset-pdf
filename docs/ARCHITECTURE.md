@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.6.0  
-**Date:** April 6, 2026  
+**Version:** 4.7.0  
+**Date:** April 7, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -173,12 +173,13 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 ### Current Implementation Snapshot (April 2026)
 
-- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast commands with typed audit bundles. All 8 handlers emit `OperationStarted`/`OperationEnded` audit events.
+- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast, **stitch** commands with typed audit bundles. All 9 handlers emit `OperationStarted`/`OperationEnded` audit events.
 - `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes working pipeline stages through Phase 5 + layout geometry supplement: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, and render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess.
+- `crates/engine` exposes working pipeline stages through Phase 6 + layout geometry supplement: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess, and **stitch engine** (`stitch.rs`) — `PdfStitcher::stitch()` replacing target section pages in the original PDF via lopdf: object renumbering, `/Kids` splice, `/Parent` fixup, deleted-page object removal, bookmark re-routing, unchanged-page validation.
 - `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
-- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, and Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`); `Span` now carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
+- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`), and **Phase 6 stitch types** (`StitchPlan`, `StitchResult`, `StitchError`); `Span` now carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
 - `crates/audit` models and persistence implemented; all handlers emit audit events (G-006 closed).
+- **lopdf 0.40.0** is wired as the write backend for Phase 6 stitching; `rust-version` bumped to 1.85 in the workspace `Cargo.toml` to satisfy MSRV.
 
 Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 
@@ -201,6 +202,7 @@ conset-pdf/
 │   │       ├── segment.rs      # CSI footer-oracle segmentation (COMPLETE)
 │   │       ├── parse.rs        # CSI outline paragraph parser (COMPLETE)
 │   │       ├── edit.rs         # SectionEditor — insert/delete/replace + renumber (COMPLETE)
+│   │       ├── stitch.rs       # PdfStitcher — lopdf page replacement + bookmark fixup (COMPLETE)
 │   │       ├── visualize.rs    # Layout overlay PNG renderer
 │   │       ├── visualize_ast.rs # HTML collapsible AST visualizer (COMPLETE)
 │   │       ├── render/         # Section regeneration pipeline (COMPLETE)
@@ -217,6 +219,7 @@ conset-pdf/
 │   │       ├── ast.rs          # ParsedDocument, SectionAst (layout: Option<SectionLayout>), AstNode (x_indent), OutlineTag, SectionLayout
 │   │       ├── edit.rs         # NodePath, EditOperation, EditRequest, EditResult, EditError
 │   │       ├── render.rs       # SpecChromeMetadata, RenderConfig, PageSize, RenderResult, RenderError
+│   │       ├── stitch.rs       # StitchPlan, StitchResult, StitchError (Phase 6)
 │   │       └── validation.rs   # Coordinator: validate_transcript()
 │   │
 │   ├── audit/                # Audit framework (shared)
@@ -498,6 +501,36 @@ The stage contracts below define the target behavior. Current implementation sta
 **Chrome Reapplication:**
 - Headers: Preserve project info, firm branding
 - Footers: Update date, recalculate page numbers, preserve section ID
+
+---
+
+### Stage 6: PDF Stitching (Write Backend)
+
+**Input:** Original PDF + Replacement PDF + `StitchPlan` (section ID, page range from `SegmentIndex`, output path, dry_run flag)
+
+**Status (Specs): COMPLETE (Phase 6, April 2026)**
+
+**Process — implemented in `crates/engine/src/stitch.rs` (`PdfStitcher::stitch()`):**
+1. Load original PDF with `lopdf::Document::load()` — `StitchError::OriginalNotFound` on failure
+2. Resolve section page range: look up `section_id` in `SegmentIndex.sections`; compute `(del_start, del_end)` zero-based indices; validate range is within document bounds — `StitchError::SectionNotFound` / `StitchError::PageRangeOutOfBounds`
+3. Capture `sorted_page_ids()` — ordered `Vec<ObjectId>` from `doc.get_pages()` sorted by page number key
+4. Load replacement PDF with `Document::load()` — `StitchError::ReplacementNotFound` on failure; call `repl.renumber_objects_with(doc.max_id + 1)` to prevent object ID collisions; copy all replacement objects into original with `doc.objects.extend(repl.objects)`; capture ordered `repl_page_ids`
+5. `splice_page_tree()` — find the `/Pages` root object, rebuild its `/Kids` array as `original_ids[..del_start] + repl_page_ids + original_ids[del_end+1..]`; update `/Count`; set `/Parent` on all replacement page objects
+6. Remove deleted section `/Page` objects from `doc.objects`
+7. `fixup_bookmarks()` — scan all objects for `/Dest` arrays whose first element matches a deleted page `ObjectId`; rewrite to `[first_repl_page_ref, /Fit]`; return rerouted bookmark count
+8. `validate_unchanged_present()` — for each page outside the deleted range, assert its `ObjectId` still exists in `doc.objects`; collect missing IDs as warning strings
+9. Conditionally `doc.save(output_path)` — skipped when `plan.dry_run = true`
+
+**Output:** `StitchResult { section_id, pages_removed, pages_inserted, total_pages_before, total_pages_after, bookmarks_updated, warnings }`
+
+**lopdf API reference:**
+- `Document::load(path) -> Result<Document, _>`
+- `doc.get_pages() -> BTreeMap<u32, ObjectId>` (key = 1-based page number)
+- `doc.renumber_objects_with(start: u32)` — rewrites all object IDs starting from `start`
+- `doc.objects: BTreeMap<ObjectId, Object>` where `ObjectId = (u32, u16)`
+- `doc.max_id: u32` — highest object ID currently in use
+- `doc.save(path) -> Result<_, _>`
+- `doc.catalog() -> Result<&Dictionary, _>`
 
 ---
 

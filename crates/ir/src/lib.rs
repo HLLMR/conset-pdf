@@ -25,6 +25,7 @@ pub mod edit;
 pub mod layout;
 pub mod render;
 pub mod segment;
+pub mod stitch;
 pub mod types;
 pub mod validation;
 
@@ -33,7 +34,8 @@ pub use ast::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout};
 pub use edit::{EditError, EditOperation, EditRequest, EditResult, NodePath};
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
 pub use render::{PageSize, RenderConfig, RenderError, RenderResult, SpecChromeMetadata};
-pub use segment::{ChromeMetadata, CoverageStats, SegmentIndex, SectionEntry};
+pub use segment::{ChromeMetadata, CoverageStats, SectionEntry, SegmentIndex};
+pub use stitch::{StitchError, StitchPlan, StitchResult};
 pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};
 pub use validation::{
     normalize_bbox, sort_spans, validate_transcript, NormalizationError, ValidationError, Validator,

@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-07] Phase 6 Complete: PDF Stitching (`lopdf`)
+
+### Added
+
+- **`lopdf = "0.40.0"` dependency** — added to workspace `[workspace.dependencies]`; wired into `crates/engine/Cargo.toml`. `rust-version` bumped from 1.82 → 1.85 to satisfy lopdf MSRV.
+- **`crates/ir/src/stitch.rs`** — `StitchPlan` (original_path, section_id, segment_index, replacement_path, output_path, dry_run), `StitchResult` (section_id, pages_removed, pages_inserted, total_pages_before, total_pages_after, bookmarks_updated, warnings), `StitchError` (thiserror: SectionNotFound, OriginalNotFound, ReplacementNotFound, WriteFailed, PageRangeOutOfBounds, PdfStructure). Exported from `crates/ir/src/lib.rs`.
+- **`crates/engine/src/stitch.rs`** — `PdfStitcher::stitch()` implements the full page-replacement algorithm:
+  1. Load original + replacement PDFs via `lopdf::Document::load()`.
+  2. Resolve section page range from `SegmentIndex`.
+  3. Renumber replacement object IDs to avoid collisions, copy objects into original document.
+  4. Splice `/Pages` root `/Kids` array: `original[..del_start] + replacement_pages + original[del_end+1..]`.
+  5. Update `/Parent` references on replacement pages.
+  6. Remove deleted section's `/Page` objects from the object store.
+  7. Re-route any outline-item `/Dest` destinations pointing to deleted pages.
+  8. Validate unchanged pages are still present.
+  9. Write output file (skipped on dry-run).
+  Private helpers: `resolve_section_range`, `sorted_page_ids`, `load_and_merge_replacement`, `splice_page_tree`, `find_pages_root_id`, `fixup_bookmarks`, `validate_unchanged_present`.
+  8 unit tests: 3 pure-logic + 5 lopdf-based with temp PDFs.
+- **`WorkflowOperation::Stitch`** contract variant added to `crates/contracts/src/lib.rs`.
+- **`apps/backend-cli/src/handlers/stitch.rs`** — `Stitch` CLI handler: reads `segment_index_path`, `replacement_path`, `section_id` from request metadata; loads `SegmentIndex`; calls `PdfStitcher::stitch()`; emits `OperationStarted`/`OperationEnded` audit events.
+- **`Stitch` subcommand** wired in `apps/backend-cli/src/main.rs` — args: `--input`, `--segment-index`, `--section`, `--replacement`, `--output`, `[--dry-run]`.
+- **6 Phase 6 integration tests** in `apps/backend-cli/tests/cli_integration_test.rs`: dry-run no-write, missing-input failure, missing-replacement failure, missing-segment-index failure, unknown-section-id failure, full stitch produces valid PDF with `%PDF` header.
+
+### Baseline
+
+- 36/36 CLI integration tests pass (30 pre-Phase 6 + 6 Phase 6; 2 `#[ignore]` tests excluded).
+- 53/53 engine unit tests pass (43 pre-Phase 6 + 8 Phase 6 stitch + 2 ignored render tests).
+- 13/13 IR unit tests pass.
+
+---
+
 ## [2026-04-06] Font Typography Extraction (Phase 5.5 Supplement)
 
 ### Added

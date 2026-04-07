@@ -11,6 +11,7 @@ pub mod extract;
 pub mod parse;
 pub mod regenerate;
 pub mod segment;
+pub mod stitch;
 pub mod visualize;
 pub mod visualize_ast;
 pub mod visualize_segments;
@@ -28,6 +29,7 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::Parse => parse::run(req, bundle),
         WorkflowOperation::Edit => edit::run(req, bundle),
         WorkflowOperation::Regenerate => regenerate::run(req, bundle),
+        WorkflowOperation::Stitch => stitch::run(req, bundle),
         WorkflowOperation::Visualize => visualize::run(req, bundle),
         WorkflowOperation::VisualizeSegments => visualize_segments::run(req, bundle),
         WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),

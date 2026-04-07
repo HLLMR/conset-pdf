@@ -1,0 +1,543 @@
+//! Phase 6 PDF stitching engine — section page replacement via `lopdf`.
+//!
+//! [`PdfStitcher`] is the public entry point.  It accepts a [`StitchPlan`] and
+//! returns a [`StitchResult`] or [`StitchError`].
+//!
+//! # Algorithm
+//!
+//! 1. Load *original* and *replacement* PDFs via [`lopdf::Document::load`].
+//! 2. Look up the target section's page range in the [`SegmentIndex`].
+//! 3. Renumber replacement objects to avoid object-ID collisions with the
+//!    original, then copy all replacement objects into the original document.
+//! 4. Rebuild the `/Pages` root `/Kids` array:
+//!    `original[..del_start] + replacement pages + original[del_end+1..]`.
+//! 5. Update `/Parent` references on replacement pages to point to the
+//!    original's `/Pages` root.
+//! 6. Remove the deleted section's `/Page` objects from the object store.
+//! 7. Reroute any outline-item (`/Dest`) destinations that pointed to deleted
+//!    pages so they target the first replacement page instead.
+//! 8. Validate that object IDs for unchanged pages are still present.
+//! 9. Write the output file (skipped on dry-run).
+//!
+//! # Invariants
+//!
+//! - **Read path:** PDFium (pdfium-render) — text/layout extraction only.
+//! - **Write path:** `lopdf` — page-level operations only.
+//! - These two libraries have non-overlapping responsibilities (MASTER_PLAN
+//!   Non-Negotiable #23).
+
+use std::collections::HashSet;
+
+use conset_pdf_ir::{SegmentIndex, StitchError, StitchPlan, StitchResult};
+use lopdf::{Document, Object, ObjectId};
+
+/// Stateless PDF stitcher.
+///
+/// All logic lives in [`PdfStitcher::stitch`]; the struct is a zero-size
+/// namespace.
+pub struct PdfStitcher;
+
+impl PdfStitcher {
+    /// Replace a section's pages in an original PDF with pages from a
+    /// regenerated replacement PDF.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StitchError`] if the original or replacement cannot be loaded,
+    /// the section ID is not in the segment index, the page range is invalid,
+    /// the PDF structure cannot be interpreted, or the output cannot be written.
+    pub fn stitch(plan: &StitchPlan) -> Result<StitchResult, StitchError> {
+        let mut doc = Document::load(&plan.original_path)
+            .map_err(|e| StitchError::OriginalNotFound(format!("{}: {e}", plan.original_path)))?;
+        let original_total = doc.get_pages().len();
+
+        let (del_start, del_end) =
+            resolve_section_range(&plan.segment_index, &plan.section_id, original_total)?;
+
+        let orig_page_ids = sorted_page_ids(&doc);
+
+        let (repl_page_ids, repl_max_id) =
+            load_and_merge_replacement(&mut doc, &plan.replacement_path)?;
+        if repl_max_id > doc.max_id {
+            doc.max_id = repl_max_id;
+        }
+
+        splice_page_tree(&mut doc, &orig_page_ids, &repl_page_ids, del_start, del_end)?;
+
+        let deleted_ids: HashSet<ObjectId> =
+            orig_page_ids[del_start..=del_end].iter().cloned().collect();
+        for &id in &orig_page_ids[del_start..=del_end] {
+            doc.objects.remove(&id);
+        }
+
+        let bookmarks_rerouted =
+            fixup_bookmarks(&mut doc, &deleted_ids, repl_page_ids.first().copied());
+
+        let warnings =
+            validate_unchanged_present(&orig_page_ids, del_start, del_end, &doc);
+
+        if !plan.dry_run {
+            doc.save(&plan.output_path)
+                .map_err(|e| StitchError::WriteFailed(e.to_string()))?;
+        }
+
+        let pages_removed = del_end - del_start + 1;
+        let pages_inserted = repl_page_ids.len();
+        let new_total = original_total - pages_removed + pages_inserted;
+
+        Ok(StitchResult {
+            section_id: plan.section_id.clone(),
+            pages_removed,
+            pages_inserted,
+            total_pages_before: original_total,
+            total_pages_after: new_total,
+            bookmarks_updated: bookmarks_rerouted > 0,
+            warnings,
+        })
+    }
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Resolve a section ID to `(start_page_idx, end_page_idx)` (both 0-based,
+/// inclusive), validating that the range is within the document.
+fn resolve_section_range(
+    index: &SegmentIndex,
+    section_id: &str,
+    total_pages: usize,
+) -> Result<(usize, usize), StitchError> {
+    let entry = index
+        .sections
+        .iter()
+        .find(|s| s.section_id == section_id)
+        .ok_or_else(|| StitchError::SectionNotFound(section_id.to_owned()))?;
+
+    let start = entry.start_page;
+    let end = entry.end_page;
+
+    if start > end {
+        return Err(StitchError::PageRangeOutOfBounds(format!(
+            "section '{section_id}' has start_page {start} > end_page {end}"
+        )));
+    }
+    if end >= total_pages {
+        return Err(StitchError::PageRangeOutOfBounds(format!(
+            "section '{section_id}' end_page {end} >= document page count {total_pages}"
+        )));
+    }
+
+    Ok((start, end))
+}
+
+/// Return page [`ObjectId`]s in ascending page-number order (0-based index →
+/// lopdf 1-based page number).
+fn sorted_page_ids(doc: &Document) -> Vec<ObjectId> {
+    // BTreeMap keys are u32 page numbers; iterating values gives reading order.
+    doc.get_pages().into_values().collect()
+}
+
+/// Load the replacement PDF, renumber its objects to avoid ID collision with
+/// `doc`, copy all replacement objects into `doc`, and return the replacement's
+/// ordered page object IDs plus its post-renumber `max_id`.
+fn load_and_merge_replacement(
+    doc: &mut Document,
+    replacement_path: &str,
+) -> Result<(Vec<ObjectId>, u32), StitchError> {
+    let mut repl = Document::load(replacement_path)
+        .map_err(|e| StitchError::ReplacementNotFound(format!("{replacement_path}: {e}")))?;
+
+    repl.renumber_objects_with(doc.max_id + 1);
+    let repl_page_ids = sorted_page_ids(&repl);
+    let repl_max_id = repl.max_id;
+
+    doc.objects.extend(repl.objects);
+
+    Ok((repl_page_ids, repl_max_id))
+}
+
+/// Rebuild the `/Pages` root `/Kids` array and `/Count`, update `/Parent`
+/// references on replacement pages, and leave unchanged pages untouched.
+fn splice_page_tree(
+    doc: &mut Document,
+    orig_page_ids: &[ObjectId],
+    repl_page_ids: &[ObjectId],
+    del_start: usize,
+    del_end: usize,
+) -> Result<(), StitchError> {
+    let pages_root_id = find_pages_root_id(doc)?;
+
+    // Build the new /Kids: pages before section + replacement + pages after.
+    let new_kids: Vec<Object> = orig_page_ids[..del_start]
+        .iter()
+        .chain(repl_page_ids.iter())
+        .chain(orig_page_ids[del_end + 1..].iter())
+        .map(|&id| Object::Reference(id))
+        .collect();
+    let new_count = new_kids.len();
+
+    match doc.get_object_mut(pages_root_id) {
+        Ok(obj) => {
+            let Object::Dictionary(ref mut pages_dict) = obj else {
+                return Err(StitchError::PdfStructure(
+                    "/Pages root object is not a dictionary".to_owned(),
+                ));
+            };
+            pages_dict.set("Kids", Object::Array(new_kids));
+            pages_dict.set(
+                "Count",
+                Object::Integer(i64::try_from(new_count).unwrap_or(i64::MAX)),
+            );
+        }
+        Err(e) => return Err(StitchError::PdfStructure(e.to_string())),
+    }
+
+    // Re-parent replacement pages to the original's /Pages root.
+    for &page_id in repl_page_ids {
+        if let Ok(obj) = doc.get_object_mut(page_id) {
+            if let Object::Dictionary(ref mut d) = obj {
+                d.set("Parent", Object::Reference(pages_root_id));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Return the [`ObjectId`] of the `/Pages` root from the document catalog.
+fn find_pages_root_id(doc: &Document) -> Result<ObjectId, StitchError> {
+    doc.catalog()
+        .map_err(|e| StitchError::PdfStructure(e.to_string()))?
+        .get(b"Pages")
+        .and_then(|obj| obj.as_reference())
+        .map_err(|e| StitchError::PdfStructure(e.to_string()))
+}
+
+/// Reroute outline-item `/Dest` destinations that reference a deleted page to
+/// point to `new_dest` (the first replacement page) instead.
+///
+/// Returns the number of bookmark destinations updated.
+fn fixup_bookmarks(
+    doc: &mut Document,
+    deleted: &HashSet<ObjectId>,
+    new_dest: Option<ObjectId>,
+) -> u32 {
+    let Some(new_page) = new_dest else { return 0 };
+
+    // First pass: collect object IDs whose /Dest points to a deleted page.
+    let ids_to_update: Vec<ObjectId> = doc
+        .objects
+        .iter()
+        .filter_map(|(&id, obj)| {
+            let Object::Dictionary(dict) = obj else { return None };
+            let dest_page_ref = dict
+                .get(b"Dest")
+                .ok()
+                .and_then(|d| d.as_array().ok())
+                .and_then(|arr| arr.first())
+                .and_then(|f| f.as_reference().ok())?;
+            if deleted.contains(&dest_page_ref) { Some(id) } else { None }
+        })
+        .collect();
+
+    let count = u32::try_from(ids_to_update.len()).unwrap_or(u32::MAX);
+
+    // Second pass: update the collected objects (mutable borrow, no conflicts).
+    for id in ids_to_update {
+        if let Some(Object::Dictionary(ref mut dict)) = doc.objects.get_mut(&id) {
+            dict.set(
+                "Dest",
+                Object::Array(vec![
+                    Object::Reference(new_page),
+                    Object::Name(b"Fit".to_vec()),
+                ]),
+            );
+        }
+    }
+
+    count
+}
+
+/// Warn for any unchanged page object ID that is no longer present in the
+/// document.  This guards against accidental removal of non-section pages.
+fn validate_unchanged_present(
+    original_page_ids: &[ObjectId],
+    del_start: usize,
+    del_end: usize,
+    doc: &Document,
+) -> Vec<String> {
+    original_page_ids
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i < del_start || *i > del_end)
+        .filter_map(|(i, id)| {
+            if doc.objects.contains_key(id) {
+                None
+            } else {
+                Some(format!(
+                    "page at index {i} (object id {id:?}) unexpectedly absent from output"
+                ))
+            }
+        })
+        .collect()
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use conset_pdf_ir::{ChromeMetadata, CoverageStats, SectionEntry, SegmentIndex};
+    use lopdf::{dictionary, Document, Object};
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// Build a minimal `n`-page PDF and return the bytes (not written to disk).
+    fn build_test_pdf_bytes(n_pages: u32) -> Vec<u8> {
+        let mut doc = Document::with_version("1.4");
+        let pages_id = doc.new_object_id();
+        let mut kids: Vec<Object> = Vec::new();
+        for _ in 0..n_pages {
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![0i64.into(), 0i64.into(), 612i64.into(), 792i64.into()],
+            });
+            kids.push(Object::Reference(page_id));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => kids,
+                "Count" => i64::from(n_pages),
+            }),
+        );
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+        doc.trailer.set("Root", catalog_id);
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).expect("write test PDF to buffer");
+        buf
+    }
+
+    /// Write test PDF bytes to a temp path and return the path.
+    fn write_test_pdf(stem: &str, n_pages: u32) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("conset-stitch-tests");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join(format!("{stem}.pdf"));
+        std::fs::write(&path, build_test_pdf_bytes(n_pages)).expect("write test PDF");
+        path
+    }
+
+    /// Build a minimal [`SegmentIndex`] covering `section_id` → pages
+    /// `[start..=end]` inside a `total_pages`-page document.
+    fn make_index(
+        section_id: &str,
+        start: usize,
+        end: usize,
+        total_pages: usize,
+    ) -> SegmentIndex {
+        SegmentIndex {
+            source_path: "test.pdf".to_owned(),
+            chrome_metadata: ChromeMetadata::default(),
+            sections: vec![SectionEntry {
+                section_id: section_id.to_owned(),
+                section_title: String::new(),
+                start_page: start,
+                end_page: end,
+                page_count: end - start + 1,
+                page_counter_detected: false,
+                confidence: 1.0,
+            }],
+            coverage: CoverageStats {
+                pages_total: total_pages,
+                pages_tagged: total_pages,
+                pages_missing_footer: 0,
+                coverage_ratio: 1.0,
+            },
+        }
+    }
+
+    // ── resolve_section_range tests ───────────────────────────────────────────
+
+    #[test]
+    fn resolve_section_range_found() {
+        let index = make_index("23 82 16", 2, 4, 10);
+        let (start, end) = resolve_section_range(&index, "23 82 16", 10).unwrap();
+        assert_eq!(start, 2);
+        assert_eq!(end, 4);
+    }
+
+    #[test]
+    fn resolve_section_range_not_found() {
+        let index = make_index("23 82 16", 2, 4, 10);
+        let err = resolve_section_range(&index, "99 99 99", 10).unwrap_err();
+        assert!(matches!(err, StitchError::SectionNotFound(_)));
+    }
+
+    #[test]
+    fn resolve_section_range_single_page() {
+        let index = make_index("01 00 00", 5, 5, 10);
+        let (start, end) = resolve_section_range(&index, "01 00 00", 10).unwrap();
+        assert_eq!(start, 5);
+        assert_eq!(end, 5);
+    }
+
+    #[test]
+    fn resolve_section_range_out_of_bounds_returns_error() {
+        let index = make_index("01 00 00", 8, 12, 10); // end_page 12 >= total 10
+        let err = resolve_section_range(&index, "01 00 00", 10).unwrap_err();
+        assert!(matches!(err, StitchError::PageRangeOutOfBounds(_)));
+    }
+
+    // ── dry-run stitch tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn stitch_dry_run_writes_no_output_file() {
+        let orig_path = write_test_pdf("dry-run-orig", 5);
+        let repl_path = write_test_pdf("dry-run-repl", 2);
+        let out_path = std::env::temp_dir()
+            .join("conset-stitch-tests")
+            .join("dry-run-output.pdf");
+        // Ensure clean state.
+        let _ = std::fs::remove_file(&out_path);
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 1, 2, 5),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: true,
+        };
+
+        let result = PdfStitcher::stitch(&plan).expect("dry-run stitch must succeed");
+        assert!(!out_path.exists(), "dry-run must not write output file");
+        assert_eq!(result.pages_removed, 2);
+        assert_eq!(result.pages_inserted, 2);
+        assert_eq!(result.total_pages_before, 5);
+        assert_eq!(result.total_pages_after, 5); // 5 - 2 + 2
+    }
+
+    #[test]
+    fn stitch_page_count_correct() {
+        // 6-page original; replace pages 0..=1 (2 pages) with 3-page replacement.
+        let orig_path = write_test_pdf("count-orig", 6);
+        let repl_path = write_test_pdf("count-repl", 3);
+        let out_path = std::env::temp_dir()
+            .join("conset-stitch-tests")
+            .join("count-output.pdf");
+        let _ = std::fs::remove_file(&out_path);
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 1, 6),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let result = PdfStitcher::stitch(&plan).expect("stitch must succeed");
+        assert_eq!(result.pages_removed, 2);
+        assert_eq!(result.pages_inserted, 3);
+        assert_eq!(result.total_pages_before, 6);
+        assert_eq!(result.total_pages_after, 7); // 6 - 2 + 3
+
+        assert!(out_path.exists(), "output PDF must be written");
+
+        // Verify the output PDF has the correct page count via lopdf.
+        let out_doc =
+            Document::load(&out_path).expect("output must be a valid loadable PDF");
+        assert_eq!(
+            out_doc.get_pages().len(),
+            7,
+            "output PDF must have exactly 7 pages"
+        );
+
+        // Verify output starts with PDF header.
+        let bytes = std::fs::read(&out_path).expect("read output PDF");
+        assert!(bytes.starts_with(b"%PDF"), "output must start with %PDF");
+    }
+
+    #[test]
+    fn stitch_replace_last_section() {
+        // Replace the last 2 pages (indices 3..=4) with 1-page replacement.
+        let orig_path = write_test_pdf("last-orig", 5);
+        let repl_path = write_test_pdf("last-repl", 1);
+        let out_path = std::env::temp_dir()
+            .join("conset-stitch-tests")
+            .join("last-output.pdf");
+        let _ = std::fs::remove_file(&out_path);
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "99 99 99".to_owned(),
+            segment_index: make_index("99 99 99", 3, 4, 5),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let result = PdfStitcher::stitch(&plan).expect("stitch last section must succeed");
+        assert_eq!(result.total_pages_after, 4); // 5 - 2 + 1
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn stitch_section_not_found_returns_error() {
+        let orig_path = write_test_pdf("nf-orig", 3);
+        let repl_path = write_test_pdf("nf-repl", 1);
+        let out_path = std::env::temp_dir().join("conset-stitch-tests").join("nf-out.pdf");
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "55 55 55".to_owned(), // not in index
+            segment_index: make_index("23 82 16", 0, 0, 3),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: true,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        assert!(matches!(err, StitchError::SectionNotFound(_)));
+    }
+
+    #[test]
+    fn stitch_missing_original_returns_error() {
+        let repl_path = write_test_pdf("mo-repl", 1);
+        let out_path = std::env::temp_dir().join("conset-stitch-tests").join("mo-out.pdf");
+
+        let plan = StitchPlan {
+            original_path: "/nonexistent/original.pdf".to_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 0, 1),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        assert!(matches!(err, StitchError::OriginalNotFound(_)));
+    }
+
+    #[test]
+    fn stitch_missing_replacement_returns_error() {
+        let orig_path = write_test_pdf("mr-orig", 3);
+        let out_path = std::env::temp_dir().join("conset-stitch-tests").join("mr-out.pdf");
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 0, 3),
+            replacement_path: "/nonexistent/replacement.pdf".to_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        assert!(matches!(err, StitchError::ReplacementNotFound(_)));
+    }
+}

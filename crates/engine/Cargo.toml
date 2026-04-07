@@ -18,5 +18,6 @@ conset-pdf-extraction = { workspace = true }
 log.workspace = true
 env_logger.workspace = true
 regex.workspace = true
+lopdf.workspace = true
 
 [dev-dependencies]

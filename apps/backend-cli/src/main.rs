@@ -150,6 +150,30 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Replace a section's pages in the original PDF with a regenerated replacement PDF.
+    ///
+    /// Requires a SegmentIndex JSON (produced by `segment`) to locate the section's
+    /// page range.  Unchanged pages are validated and bookmarks are updated automatically.
+    Stitch {
+        /// Path to the original (source) PDF.
+        #[arg(short, long)]
+        input: String,
+        /// Path to the SegmentIndex JSON (produced by `segment`).
+        #[arg(long)]
+        segment_index: String,
+        /// CSI section ID to replace (e.g. "23 82 16").
+        #[arg(long)]
+        section: String,
+        /// Path to the regenerated replacement PDF (produced by `regenerate`).
+        #[arg(long)]
+        replacement: String,
+        /// Path for the stitched output PDF.
+        #[arg(short, long)]
+        output: String,
+        /// Validate and compute result without writing the output file.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -242,6 +266,20 @@ fn main() -> Result<()> {
                 });
             }
             (WorkflowOperation::Regenerate, ast.clone(), Some(output.clone()), *dry_run, meta)
+        }
+        Commands::Stitch { input, segment_index, section, replacement, output, dry_run } => {
+            let meta = vec![
+                KeyValuePair {
+                    key: "segment_index_path".to_owned(),
+                    value: segment_index.clone(),
+                },
+                KeyValuePair {
+                    key: "replacement_path".to_owned(),
+                    value: replacement.clone(),
+                },
+                KeyValuePair { key: "section_id".to_owned(), value: section.clone() },
+            ];
+            (WorkflowOperation::Stitch, input.clone(), Some(output.clone()), *dry_run, meta)
         }
     };
 

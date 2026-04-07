@@ -86,6 +86,9 @@ pub enum WorkflowOperation {
     Edit,
     /// Render a section AST to a PDF file via headless Chrome.
     Regenerate,
+    /// Replace a section's pages in an original PDF with a regenerated replacement
+    /// PDF, updating bookmarks and validating unchanged pages.
+    Stitch,
     MergeAddenda,
     SplitSet,
     AssembleSet,

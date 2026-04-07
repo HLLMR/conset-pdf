@@ -1,6 +1,6 @@
 # Conset PDF: Master Plan
-**Version:** 4.6.0 (Phase 5 + Layout Geometry Capture + Font Typography Extraction)  
-**Date:** April 6, 2026  
+**Version:** 4.7.0 (Phase 6 — PDF Stitching via lopdf)  
+**Date:** April 7, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
 **Doc Status Tag:** Implemented
@@ -300,7 +300,7 @@ Conset PDF operates like a compiler:
 | **Language** | Rust | Memory safety, determinism, single-binary deployment |
 | **PDF Extraction** | PDFium (via `pdfium-render`) | Industry-standard, Apache-2.0, proven reliability |
 | **PDF Generation** | Headless Chrome (via `headless_chrome`) | High-fidelity HTML→PDF, CSS support |
-| **PDF Write (page ops)** | `lopdf` | Pure-Rust, MIT-licensed; page-level insert/delete/swap, rotation normalization, bookmark mutation; canonical backend for PdfStitcher (Phase 6) and Intake Triage page normalization |
+| **PDF Write (page ops)** | `lopdf` | Pure-Rust, MIT-licensed; page-level insert/delete/swap, rotation normalization, bookmark mutation; canonical backend for `PdfStitcher` (Phase 6 — **COMPLETE**) and Intake Triage page normalization (Phase 7) |
 | **Local Micro-ML Runtime** | ONNX Runtime (on-device) | Optional confidence boost path for hard edge cases; deterministic-bounded via fixed model/version + logged fusion policy |
 | **OCR (raster path)** | On-device OCR engine (pluggable) | Required fallback for raster/low-text PDFs with confidence + provenance tagging |
 | **Pattern Matching** | `regex` crate | Deterministic, fast, well-tested |
@@ -896,7 +896,7 @@ Phase 5: Regeneration (Weeks 11-12) ← COMPLETE
     ↓
 Phase 5.5: Layout Geometry + Font Typography (supplement) ← COMPLETE
     ↓
-Phase 6: PDF Stitching (Week 13) ← NEXT
+Phase 6: PDF Stitching (Week 13) ← COMPLETE
     ↓
 Phase 7: End-to-End (Week 14) ← ALPHA COMPLETE
     ↓
@@ -1312,31 +1312,46 @@ All existing 30/30 integration tests and 43+13 unit tests pass unchanged — bac
 
 ### Phase 6 — PDF Stitching & Writeback (Week 13)
 
-**Goal:** Replace section pages in original PDF.
+**Goal:** Replace section pages in original PDF using lopdf write path.
+
+**Status: COMPLETE — April 7, 2026.**
 
 **Deliverables:**
-- ☐ PdfStitcher implementation
-- ☐ Page replacement logic (delete old, insert new)
-- ☐ Bookmark preservation
-- ☐ Verbatim copy of unchanged pages
-- ☐ Validation (unchanged pages identical)
+- ✅ `PdfStitcher` implementation (`crates/engine/src/stitch.rs`) — stateless struct with full `stitch(plan: &StitchPlan) -> Result<StitchResult, StitchError>` algorithm
+- ✅ Page replacement logic: load original + replacement PDFs via `lopdf::Document::load()`; renumber replacement objects with `renumber_objects_with()` to avoid ID collisions; copy objects into original with `doc.objects.extend()`
+- ✅ `/Pages` root `/Kids` splice: `sorted_page_ids()` extracts ordered `Vec<ObjectId>`; `splice_page_tree()` rebuilds the flat `/Kids` array as `original[..del_start] + replacement_pages + original[del_end+1..]`; `/Parent` updated on all replacement pages
+- ✅ Verbatim copy of unchanged pages: removed section's `/Page` objects deleted from `doc.objects`; pages outside the section range are never touched
+- ✅ Bookmark preservation: `fixup_bookmarks()` two-pass scan — first pass collects object IDs with deleted-page `/Dest` array references; second pass rewrites those to `[first_repl_page_id, /Fit]`
+- ✅ Validation: `validate_unchanged_present()` checks all non-section page object IDs remain in `doc.objects`; emits warnings in `StitchResult.warnings` if any are missing
+- ✅ `StitchPlan`, `StitchResult`, `StitchError` IR types in `crates/ir/src/stitch.rs`; exported from `crates/ir/src/lib.rs`
+- ✅ `WorkflowOperation::Stitch` contract variant added to `crates/contracts/src/lib.rs`
+- ✅ `stitch` CLI subcommand in `apps/backend-cli/src/main.rs` — `--input`, `--segment-index`, `--section`, `--replacement`, `--output`, `--dry-run`
+- ✅ `apps/backend-cli/src/handlers/stitch.rs` — reads metadata keys; loads `SegmentIndex` from JSON; builds `StitchPlan`; calls `PdfStitcher::stitch()`; emits `OperationStarted`/`OperationEnded` audit events; all 9 CLI handlers now have audit wiring
+- ✅ `workspace: rust-version` bumped from `1.82` → `1.85` to satisfy lopdf MSRV; `lopdf = "0.40.0"` added to `[workspace.dependencies]`
+- ✅ 8 unit tests in `crates/engine/src/stitch.rs` (3 pure-logic `resolve_section_range_*` tests + 5 lopdf-based with temp PDFs: dry-run, page count, last-section replace, section-not-found, missing-original, missing-replacement)
+- ✅ 6 Phase 6 integration tests appended to `apps/backend-cli/tests/cli_integration_test.rs`
 
 **Test:**
 ```bash
-cargo run -- stitch \
-  --original test.pdf \
+cargo run --bin backend-cli -- stitch \
+  --input original.pdf \
+  --segment-index segment-index.json \
   --section "23 82 16" \
   --replacement section-new.pdf \
-  -o output.pdf
+  --output output.pdf
 ```
 
-**Output:** Final PDF with section replaced, all other pages unchanged.
+**Output:** Final PDF with target section pages replaced; all other pages unchanged.
 
 **Definition of Done:**
-- Section pages replaced correctly
-- Unchanged pages are verbatim copies (byte-identical when possible)
-- Bookmarks updated to reflect new structure
-- Output passes validation
+- ✅ Section pages replaced correctly (del_start..=del_end removed; replacement pages spliced in)
+- ✅ Unchanged pages are verbatim (untouched object entries)
+- ✅ Bookmarks re-routed when they referenced deleted pages
+- ✅ Output passes `%PDF` header validation
+- ✅ Dry-run writes nothing (skips `doc.save()`)
+- ✅ `StitchResult` reports `pages_removed`, `pages_inserted`, `total_pages_before`, `total_pages_after`, `bookmarks_updated`, `warnings`
+- ✅ `OperationStarted`/`OperationEnded` audit events emitted by handler
+- ✅ 36/36 CLI integration + 53/53 engine unit + 13/13 IR unit tests pass
 
 ---
 

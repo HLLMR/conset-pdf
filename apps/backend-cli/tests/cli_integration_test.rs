@@ -1371,3 +1371,286 @@ fn cli_regenerate_produces_pdf() {
     );
     assert!(pdf_bytes.len() > 1024, "output PDF is suspiciously small ({} bytes)", pdf_bytes.len());
 }
+
+// ── Phase 6: Stitch tests ─────────────────────────────────────────────────────
+
+/// Helper: run `backend-cli stitch --input <pdf> --segment-index <json>
+///          --section <id> --replacement <pdf> --output <pdf>`.
+/// Returns the parsed `WorkflowResponse` JSON.
+fn run_stitch(
+    input: &PathBuf,
+    segment_index: &PathBuf,
+    section: &str,
+    replacement: &PathBuf,
+    output: &PathBuf,
+    dry_run: bool,
+) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+
+    let mut cmd = Command::new(&exe);
+    cmd.arg("stitch")
+        .arg("--input").arg(input)
+        .arg("--segment-index").arg(segment_index)
+        .arg("--section").arg(section)
+        .arg("--replacement").arg(replacement)
+        .arg("--output").arg(output);
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+
+    let output_result = cmd.output().expect("failed to spawn backend-cli stitch");
+    let stdout = String::from_utf8_lossy(&output_result.stdout);
+    assert!(
+        output_result.status.success(),
+        "stitch exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output_result.stderr)
+    );
+    serde_json::from_str(&stdout).expect("stitch stdout must be valid JSON WorkflowResponse")
+}
+
+/// Build a segment index JSON for `source_path` that contains a single section
+/// covering pages 0..=(page_count-1) with the given `section_id`.  Returns the
+/// path of the written index file.
+fn write_minimal_segment_index(
+    dir: &PathBuf,
+    source_path: &PathBuf,
+    section_id: &str,
+    page_count: usize,
+) -> PathBuf {
+    let idx = serde_json::json!({
+        "source_path": source_path.to_string_lossy(),
+        "chrome_metadata": {
+            "project_id": "",
+            "project_name": "",
+            "firm": "",
+            "date": ""
+        },
+        "sections": [{
+            "section_id": section_id,
+            "section_title": "Test Section",
+            "start_page": 0,
+            "end_page": page_count - 1,
+            "page_count": page_count,
+            "page_counter_detected": false,
+            "confidence": 1.0
+        }],
+        "coverage": {
+            "pages_total": page_count,
+            "pages_tagged": page_count,
+            "pages_missing_footer": 0,
+            "coverage_ratio": 1.0
+        }
+    });
+    let path = dir.join("segment-index.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&idx).unwrap())
+        .expect("write segment index");
+    path
+}
+
+/// Dry-run stitch: must exit 0 and return succeeded without writing any file.
+#[test]
+fn cli_stitch_dry_run_no_write() {
+    let tmp = tmp_dir("stitch-dry-run");
+    let pdf = tier1("simple.pdf");
+    assert!(pdf.exists(), "simple.pdf fixture missing");
+
+    // simple.pdf is 3 pages; use it as both input and replacement.
+    let segment_index = write_minimal_segment_index(&tmp, &pdf, "23 82 16", 3);
+    let output = tmp.join("stitched_should_not_exist.pdf");
+
+    let resp = run_stitch(&pdf, &segment_index, "23 82 16", &pdf, &output, true);
+    assert_envelope(&resp);
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "stitch dry-run must succeed: {resp}"
+    );
+    assert!(!output.exists(), "stitch dry-run must not write output file");
+}
+
+/// Missing input PDF must return status=failed (process exits 0).
+#[test]
+fn cli_stitch_missing_input_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("stitch-missing-input");
+    let pdf = tier1("simple.pdf");
+
+    let segment_index = write_minimal_segment_index(&tmp, &pdf, "23 82 16", 3);
+    let output = tmp.join("out.pdf");
+    let missing = tmp.join("nonexistent.pdf");
+
+    let out = Command::new(&exe)
+        .arg("stitch")
+        .arg("--input").arg(&missing)
+        .arg("--segment-index").arg(&segment_index)
+        .arg("--section").arg("23 82 16")
+        .arg("--replacement").arg(&pdf)
+        .arg("--output").arg(&output)
+        .output()
+        .expect("failed to spawn backend-cli stitch");
+
+    assert!(out.status.success(), "stitch must exit 0 even on input error");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for missing input: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+/// Missing replacement PDF must return status=failed (process exits 0).
+#[test]
+fn cli_stitch_missing_replacement_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("stitch-missing-replacement");
+    let pdf = tier1("simple.pdf");
+
+    let segment_index = write_minimal_segment_index(&tmp, &pdf, "23 82 16", 3);
+    let output = tmp.join("out.pdf");
+    let missing = tmp.join("nonexistent_replacement.pdf");
+
+    let out = Command::new(&exe)
+        .arg("stitch")
+        .arg("--input").arg(&pdf)
+        .arg("--segment-index").arg(&segment_index)
+        .arg("--section").arg("23 82 16")
+        .arg("--replacement").arg(&missing)
+        .arg("--output").arg(&output)
+        .output()
+        .expect("failed to spawn backend-cli stitch");
+
+    assert!(out.status.success(), "stitch must exit 0 even on replacement error");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for missing replacement: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+/// Missing segment-index JSON must return status=failed (process exits 0).
+#[test]
+fn cli_stitch_missing_segment_index_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("stitch-missing-index");
+    let pdf = tier1("simple.pdf");
+
+    let output = tmp.join("out.pdf");
+    let missing = tmp.join("nonexistent_index.json");
+
+    let out = Command::new(&exe)
+        .arg("stitch")
+        .arg("--input").arg(&pdf)
+        .arg("--segment-index").arg(&missing)
+        .arg("--section").arg("23 82 16")
+        .arg("--replacement").arg(&pdf)
+        .arg("--output").arg(&output)
+        .output()
+        .expect("failed to spawn backend-cli stitch");
+
+    assert!(out.status.success(), "stitch must exit 0 even on missing index");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for missing segment index: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+/// Unknown section ID (not in the segment index) must return status=failed.
+#[test]
+fn cli_stitch_unknown_section_id_fails() {
+    let exe = backend_cli_exe_path();
+    let tmp = tmp_dir("stitch-unknown-section");
+    let pdf = tier1("simple.pdf");
+
+    let segment_index = write_minimal_segment_index(&tmp, &pdf, "23 82 16", 3);
+    let output = tmp.join("out.pdf");
+
+    let out = Command::new(&exe)
+        .arg("stitch")
+        .arg("--input").arg(&pdf)
+        .arg("--segment-index").arg(&segment_index)
+        .arg("--section").arg("99 99 99")   // not in index
+        .arg("--replacement").arg(&pdf)
+        .arg("--output").arg(&output)
+        .output()
+        .expect("failed to spawn backend-cli stitch");
+
+    assert!(out.status.success(), "stitch must exit 0 even on unknown section");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let resp: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for unknown section ID: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+/// Full stitch: segment SPEC, then replace the first detected section with
+/// `simple.pdf`.  Output must be a valid PDF with a `%PDF` header.
+#[test]
+fn cli_stitch_produces_valid_pdf() {
+    let tmp = tmp_dir("stitch-produces-pdf");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    let replacement_pdf = tier1("simple.pdf");
+
+    // Step 1: extract transcript.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+
+    // Step 2: build segment index.
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    // Step 3: discover first section from the index.
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        // No sections detected — this fixture is unsuitable; skip gracefully.
+        return;
+    }
+    let first_section_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    // Step 4: stitch (write mode).
+    let output_pdf = tmp.join("stitched.pdf");
+    let resp = run_stitch(
+        &spec_pdf,
+        &segment_json,
+        &first_section_id,
+        &replacement_pdf,
+        &output_pdf,
+        false,
+    );
+
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "stitch must succeed: {resp}"
+    );
+    assert!(output_pdf.exists(), "stitch must write the output PDF");
+
+    let bytes = std::fs::read(&output_pdf).expect("read stitched PDF");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "stitched output must start with %PDF header"
+    );
+    assert!(bytes.len() > 512, "stitched PDF is suspiciously small ({} bytes)", bytes.len());
+
+    // Summary should report pages_removed and pages_inserted.
+    let summary = resp["result"]["summary"].as_str().unwrap_or("");
+    assert!(
+        summary.contains("Stitched section"),
+        "summary should mention 'Stitched section': {summary}"
+    );
+}
