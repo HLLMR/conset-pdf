@@ -42,6 +42,10 @@ pub struct WorkflowRequest {
     pub input_path: String,
     pub output_path: Option<String>,
     pub options: WorkflowOptions,
+    /// Input bundle for Stage 0 intake triage ([`WorkflowOperation::Intake`]).
+    /// Absent for all other operations.
+    #[serde(default)]
+    pub intake_bundle: Option<crate::intake::IntakeBundle>,
 }
 
 /// Response envelope returned by workflow runners.
@@ -102,6 +106,8 @@ pub enum WorkflowOperation {
     VisualizeSegments,
     /// Render a `ParsedDocument` JSON as a self-contained HTML tree for outline inspection.
     VisualizeAst,
+    /// Stage 0 intake triage: rotation normalization and per-page audit.
+    Intake,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

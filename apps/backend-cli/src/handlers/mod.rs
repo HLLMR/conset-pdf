@@ -9,6 +9,7 @@
 pub mod apply_addendum;
 pub mod edit;
 pub mod extract;
+pub mod intake;
 pub mod parse;
 pub mod regenerate;
 pub mod segment;
@@ -35,6 +36,7 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::Visualize => visualize::run(req, bundle),
         WorkflowOperation::VisualizeSegments => visualize_segments::run(req, bundle),
         WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),
+        WorkflowOperation::Intake => intake::run(req, bundle),
         _ => not_implemented(req, bundle),
     }
 }

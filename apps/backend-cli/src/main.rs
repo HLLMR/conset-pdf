@@ -196,6 +196,18 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Run Stage 0 intake triage: detect and normalize rotated pages in a PDF.
+    Intake {
+        /// Path to the input PDF file.
+        #[arg(short, long)]
+        input: String,
+        /// Path for the output NormalizedIntakeBundle JSON.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Detect issues and report them without modifying any files on disk.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -322,6 +334,9 @@ fn main() -> Result<()> {
             }
             (WorkflowOperation::SpecsPatch, original.clone(), output.clone(), *dry_run, meta)
         }
+        Commands::Intake { input, output, dry_run } => {
+            (WorkflowOperation::Intake, input.clone(), output.clone(), *dry_run, vec![])
+        }
     };
 
     let operation_id = format!("op-1-{}", started_at.timestamp_millis());
@@ -333,6 +348,7 @@ fn main() -> Result<()> {
         input_path,
         output_path,
         options: WorkflowOptions { dry_run, metadata: extra_metadata, ..Default::default() },
+        intake_bundle: None,
     };
 
     // ── Dispatch ──────────────────────────────────────────────────────────────

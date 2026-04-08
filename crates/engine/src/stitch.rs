@@ -26,7 +26,7 @@
 //! - These two libraries have non-overlapping responsibilities (MASTER_PLAN
 //!   Non-Negotiable #23).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use conset_pdf_ir::{SegmentIndex, StitchError, StitchPlan, StitchResult};
 use lopdf::{Document, Object, ObjectId};
@@ -62,6 +62,14 @@ impl PdfStitcher {
             doc.max_id = repl_max_id;
         }
 
+        // Snapshot content hashes for unchanged pages BEFORE splice mutates /Pages.
+        let unchanged_ids: Vec<ObjectId> = orig_page_ids[..del_start]
+            .iter()
+            .chain(orig_page_ids[del_end + 1..].iter())
+            .cloned()
+            .collect();
+        let before_hashes = snapshot_hashes(&doc, &unchanged_ids);
+
         splice_page_tree(&mut doc, &orig_page_ids, &repl_page_ids, del_start, del_end)?;
 
         let deleted_ids: HashSet<ObjectId> =
@@ -73,8 +81,9 @@ impl PdfStitcher {
         let bookmarks_rerouted =
             fixup_bookmarks(&mut doc, &deleted_ids, repl_page_ids.first().copied());
 
-        let warnings =
+        let mut warnings =
             validate_unchanged_present(&orig_page_ids, del_start, del_end, &doc);
+        validate_unchanged_content(&doc, &before_hashes, &mut warnings);
 
         if !plan.dry_run {
             doc.save(&plan.output_path)
@@ -293,6 +302,52 @@ fn validate_unchanged_present(
             }
         })
         .collect()
+}
+
+/// Snapshot FNV-1a content hashes for the given object IDs.
+///
+/// Only IDs present in [`Document::objects`] are snapshotted; absent IDs are
+/// silently skipped (they will be caught by [`validate_unchanged_present`]).
+fn snapshot_hashes(doc: &Document, ids: &[ObjectId]) -> HashMap<ObjectId, u64> {
+    ids.iter()
+        .filter_map(|&id| doc.objects.get(&id).map(|obj| (id, fnv1a_object(obj))))
+        .collect()
+}
+
+/// Check that unchanged page objects retain identical content after splicing.
+///
+/// Appends a warning string for every object whose FNV-1a hash differs from
+/// the value captured by [`snapshot_hashes`] before `splice_page_tree` ran.
+fn validate_unchanged_content(
+    doc: &Document,
+    before: &HashMap<ObjectId, u64>,
+    warnings: &mut Vec<String>,
+) {
+    for (&id, &before_hash) in before {
+        if let Some(obj) = doc.objects.get(&id) {
+            let after_hash = fnv1a_object(obj);
+            if after_hash != before_hash {
+                warnings.push(format!(
+                    "page object {id:?} content changed unexpectedly \
+                     (before: {before_hash:#018x}, after: {after_hash:#018x})"
+                ));
+            }
+        }
+        // Missing objects are reported by validate_unchanged_present; skip here.
+    }
+}
+
+/// Compute a FNV-1a-64 hash over the `Debug` representation of a lopdf `Object`.
+///
+/// Using `Debug` output gives a stable, dependency-free byte representation of
+/// any `Object` variant without requiring lopdf's internal serializer.
+fn fnv1a_object(obj: &Object) -> u64 {
+    const BASIS: u64 = 14_695_981_039_346_656_037;
+    const PRIME: u64 = 1_099_511_628_211;
+    let repr = format!("{obj:?}");
+    repr.bytes().fold(BASIS, |hash, byte| {
+        hash.wrapping_mul(PRIME) ^ u64::from(byte)
+    })
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -637,5 +692,168 @@ mod tests {
             matches!(err, StitchError::ReplacementNotFound(_) | StitchError::PdfStructure(_)),
             "corrupt replacement must return a stitch error, got: {err:?}"
         );
+    }
+
+    // ── 8.3.E — Unchanged-page content-hash tests ─────────────────────────────
+
+    /// After a successful stitch, unchanged page objects must have identical
+    /// in-memory content before and after `splice_page_tree` (no hash mismatches).
+    #[test]
+    fn stitch_unchanged_pages_content_hash_unchanged() {
+        let orig_path = write_test_pdf("hash-orig", 5);
+        let repl_path = write_test_pdf("hash-repl", 2);
+        let out_path =
+            std::env::temp_dir().join("conset-stitch-tests").join("hash-out.pdf");
+        let _ = std::fs::remove_file(&out_path);
+
+        // Replace the middle section (pages 1–2 in a 5-page doc: 0-indexed).
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 1, 2, 5),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let result = PdfStitcher::stitch(&plan).expect("stitch must succeed");
+        assert!(
+            result.warnings.is_empty(),
+            "no content-hash warnings expected for a clean stitch, got: {:?}",
+            result.warnings
+        );
+    }
+
+    // ── 8.3.F — Multi-section page-growth regression test ────────────────────
+
+    /// Build a `SegmentIndex` with three explicitly specified sections covering
+    /// a `total_pages`-page document.
+    fn make_three_section_index(total_pages: usize) -> SegmentIndex {
+        SegmentIndex {
+            source_path: "test.pdf".to_owned(),
+            chrome_metadata: ChromeMetadata::default(),
+            sections: vec![
+                SectionEntry {
+                    section_id: "sec-A".to_owned(),
+                    section_title: String::new(),
+                    start_page: 0,
+                    end_page: 2,
+                    page_count: 3,
+                    page_counter_detected: false,
+                    confidence: 1.0,
+                },
+                SectionEntry {
+                    section_id: "sec-B".to_owned(),
+                    section_title: String::new(),
+                    start_page: 3,
+                    end_page: 5,
+                    page_count: 3,
+                    page_counter_detected: false,
+                    confidence: 1.0,
+                },
+                SectionEntry {
+                    section_id: "sec-C".to_owned(),
+                    section_title: String::new(),
+                    start_page: 6,
+                    end_page: 8,
+                    page_count: 3,
+                    page_counter_detected: false,
+                    confidence: 1.0,
+                },
+            ],
+            coverage: CoverageStats {
+                pages_total: total_pages,
+                pages_tagged: total_pages,
+                pages_missing_footer: 0,
+                coverage_ratio: 1.0,
+            },
+        }
+    }
+
+    /// Stitch two sections (C then A) with page-count growth to verify that the
+    /// last-to-first ordering keeps the middle section (B) intact.
+    ///
+    /// Original: 9 pages (A=0–2, B=3–5, C=6–8).
+    /// Step 1: replace C (3 pages) with 4 pages → total = 10, A/B unchanged.
+    /// Step 2: replace A (3 pages) with 5 pages → total = 12, B unchanged.
+    ///
+    /// After both stitches:
+    ///   - total pages = 5 (A) + 3 (B) + 4 (C) = 12
+    ///   - all original B page object IDs are still present in the output
+    ///   - no content-hash warnings (B's page objects are byte-identical)
+    #[test]
+    fn stitch_two_sections_with_page_growth_preserves_middle_section() {
+        let dir = std::env::temp_dir().join("conset-stitch-tests");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+
+        // Build original 9-page doc and write to disk.
+        let orig_path = dir.join("pgrowth-orig.pdf");
+        std::fs::write(&orig_path, build_test_pdf_bytes(9)).expect("write orig PDF");
+
+        // Replacement for C: 4 pages (net +1).
+        let repl_c_path = write_test_pdf("pgrowth-repl-c", 4);
+        // Replacement for A: 5 pages (net +2).
+        let repl_a_path = write_test_pdf("pgrowth-repl-a", 5);
+
+        // Capture B page object IDs from the original before any stitch.
+        let orig_doc = Document::load(&orig_path).expect("load original doc");
+        let orig_page_ids: Vec<ObjectId> = orig_doc.get_pages().into_values().collect();
+        // B pages are at 0-indexed positions 3, 4, 5.
+        let b_page_ids: Vec<ObjectId> =
+            orig_page_ids[3..=5].iter().cloned().collect();
+
+        let after_c_path = dir.join("pgrowth-after-c.pdf");
+        let after_a_path = dir.join("pgrowth-after-a.pdf");
+        let _ = std::fs::remove_file(&after_c_path);
+        let _ = std::fs::remove_file(&after_a_path);
+
+        // Step 1: replace section C (pages 6–8) last → first ordering.
+        let result_c = PdfStitcher::stitch(&StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "sec-C".to_owned(),
+            segment_index: make_three_section_index(9),
+            replacement_path: repl_c_path.to_string_lossy().into_owned(),
+            output_path: after_c_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        })
+        .expect("stitch C must succeed");
+        assert_eq!(result_c.total_pages_after, 10, "after C: 9 - 3 + 4 = 10");
+        assert!(result_c.warnings.is_empty(), "stitch C must have no warnings");
+
+        // Build an updated SegmentIndex for the intermediate doc: A is still at
+        // pages 0–2; B is still at 3–5 (C was after them, didn't shift A/B).
+        let intermediate_index = {
+            let mut idx = make_three_section_index(10);
+            // A and B are unchanged in position; C now occupies 6–9 (4 pages).
+            idx.sections[2].end_page = 9;
+            idx.sections[2].page_count = 4;
+            idx.coverage.pages_total = 10;
+            idx.coverage.pages_tagged = 10;
+            idx
+        };
+
+        // Step 2: replace section A (pages 0–2) in the intermediate doc.
+        let result_a = PdfStitcher::stitch(&StitchPlan {
+            original_path: after_c_path.to_string_lossy().into_owned(),
+            section_id: "sec-A".to_owned(),
+            segment_index: intermediate_index,
+            replacement_path: repl_a_path.to_string_lossy().into_owned(),
+            output_path: after_a_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        })
+        .expect("stitch A must succeed");
+
+        // Total pages: A(5) + B(3) + C(4) = 12.
+        assert_eq!(result_a.total_pages_after, 12, "final doc must have 12 pages");
+        assert!(result_a.warnings.is_empty(), "stitch A must have no warnings");
+
+        // Verify all original B page object IDs are still in the final document.
+        let final_doc = Document::load(&after_a_path).expect("load final doc");
+        for b_id in &b_page_ids {
+            assert!(
+                final_doc.objects.contains_key(b_id),
+                "original B page object {b_id:?} must be present in final doc"
+            );
+        }
     }
 }

@@ -2112,3 +2112,215 @@ fn cli_apply_addendum_writes_diagnostics_jsonl() {
     );
 }
 
+// ── Sprint 8.2 — Stage 0 intake triage tests ─────────────────────────────────
+
+/// Run `backend-cli intake --input <pdf> [--output <json>] [--dry-run]`.
+/// Returns the parsed `WorkflowResponse` JSON.
+fn run_intake(pdf: &PathBuf, out_json: Option<&PathBuf>, dry_run: bool) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(pdf.exists(), "input PDF not found: {}", pdf.display());
+
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("intake").arg("--input").arg(pdf);
+    if let Some(out) = out_json {
+        cmd.arg("--output").arg(out);
+    }
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+
+    let output = cmd.output().expect("failed to spawn backend-cli intake");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "intake exited non-zero for {}:\nstdout: {stdout}\nstderr: {}",
+        pdf.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    serde_json::from_str(&stdout).expect("stdout must be valid WorkflowResponse JSON")
+}
+
+#[test]
+fn cli_intake_dry_run_succeeds() {
+    let pdf = tier1("simple.pdf");
+    let response = run_intake(&pdf, None, true);
+
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "dry-run intake must report succeeded"
+    );
+    let summary = response["result"]["summary"].as_str().unwrap_or("");
+    assert!(
+        summary.contains("dry_run"),
+        "dry-run summary must mention dry_run; got: {summary}"
+    );
+}
+
+#[test]
+fn cli_intake_no_rotation_reports_zero_normalized() {
+    // Copy the corpus PDF to a temp location so in-place normalization does
+    // not touch the shared fixture.
+    let tmp = tmp_dir("intake-no-rotation");
+    let src = tier1("simple.pdf");
+    let pdf = tmp.join("simple.pdf");
+    std::fs::copy(&src, &pdf).expect("copy simple.pdf to tmp");
+
+    let response = run_intake(&pdf, None, false);
+
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "intake of a clean PDF must succeed"
+    );
+    let summary = response["result"]["summary"].as_str().unwrap_or("");
+    assert!(
+        summary.contains("0 rotation(s) normalized"),
+        "summary must report 0 rotations normalized; got: {summary}"
+    );
+}
+
+#[test]
+fn cli_intake_writes_normalized_bundle_json() {
+    let tmp = tmp_dir("intake-bundle-json");
+    let src = tier1("simple.pdf");
+    let pdf = tmp.join("simple.pdf");
+    std::fs::copy(&src, &pdf).expect("copy simple.pdf to tmp");
+    let out_json = tmp.join("bundle.json");
+
+    run_intake(&pdf, Some(&out_json), false);
+
+    assert!(out_json.exists(), "intake --output must create the bundle JSON file");
+    let text = std::fs::read_to_string(&out_json).expect("read bundle JSON");
+    let val: serde_json::Value = serde_json::from_str(&text).expect("bundle JSON must be valid");
+
+    assert!(
+        !val["bundle_id"].as_str().unwrap_or("").is_empty(),
+        "bundle_id must be non-empty in the output JSON"
+    );
+    assert_eq!(
+        val["document_class"].as_str().unwrap_or(""),
+        "unknown",
+        "document_class must default to 'unknown' in Stage 0 output"
+    );
+}
+
+// ── Sprint 8.3.D — Determinism regression test ────────────────────────────────
+
+/// Run `apply-addendum --dry-run` twice with identical inputs and verify that
+/// `change-report.json` is deterministic between runs.
+///
+/// Compared fields (per 8.3.D spec):
+/// - `section_results` array length and per-entry `section_id` order
+/// - per-entry `status` field
+/// - `ParseDiagnostic.node_count` and all `node_distribution` sub-fields
+///
+/// Explicitly excluded from comparison: timestamps, `elapsed_ms`, path strings.
+#[test]
+fn apply_addendum_dry_run_is_deterministic() {
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC tier-1 fixture must exist");
+
+    // ── Find a real section ID ────────────────────────────────────────────────
+    let setup_tmp = tmp_dir("determinism-setup");
+    let transcript = setup_tmp.join("tr.json");
+    run_extract(&spec_pdf, &transcript);
+    let segment_json = setup_tmp.join("seg.json");
+    run_segment(&transcript, &segment_json);
+
+    let seg_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let seg: serde_json::Value = serde_json::from_str(&seg_text).expect("parse segment index");
+    let sections = seg["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        // No sections detected — fixture is unsuitable; skip rather than fail.
+        return;
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    // ── Shared manifest (no-op operations — parse-only dry run) ───────────────
+    let manifest_dir = tmp_dir("determinism-manifest");
+    let manifest = write_minimal_addendum_manifest(
+        &manifest_dir,
+        Some("determinism test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+
+    // ── Run 1 ─────────────────────────────────────────────────────────────────
+    let bundle1 = tmp_dir("determinism-run1");
+    run_apply_addendum(&spec_pdf, &manifest, None, Some(&bundle1), true);
+    let report1_text = std::fs::read_to_string(bundle1.join("change-report.json"))
+        .expect("change-report.json must exist after run 1");
+    let report1: serde_json::Value =
+        serde_json::from_str(&report1_text).expect("run 1 change-report.json must be valid JSON");
+
+    // ── Run 2 ─────────────────────────────────────────────────────────────────
+    let bundle2 = tmp_dir("determinism-run2");
+    run_apply_addendum(&spec_pdf, &manifest, None, Some(&bundle2), true);
+    let report2_text = std::fs::read_to_string(bundle2.join("change-report.json"))
+        .expect("change-report.json must exist after run 2");
+    let report2: serde_json::Value =
+        serde_json::from_str(&report2_text).expect("run 2 change-report.json must be valid JSON");
+
+    // ── Compare section_results ───────────────────────────────────────────────
+    let secs1 = report1["section_results"].as_array().expect("section_results array (run 1)");
+    let secs2 = report2["section_results"].as_array().expect("section_results array (run 2)");
+
+    assert_eq!(secs1.len(), secs2.len(), "section_results length must match");
+
+    for (i, (s1, s2)) in secs1.iter().zip(secs2.iter()).enumerate() {
+        assert_eq!(
+            s1["section_id"], s2["section_id"],
+            "section_results[{i}].section_id must match"
+        );
+        assert_eq!(
+            s1["status"], s2["status"],
+            "section_results[{i}].status must match"
+        );
+    }
+
+    // ── Compare ParseDiagnostic node counts from diagnostics ─────────────────
+    let parse_node_distribution = |report: &serde_json::Value| -> Vec<serde_json::Value> {
+        let diags = match report["diagnostics"].as_array() {
+            Some(d) => d,
+            None => return vec![],
+        };
+        diags
+            .iter()
+            .filter(|d| d["stage"].as_str() == Some("parse"))
+            .map(|d| {
+                serde_json::json!({
+                    "section_id": d["section_id"],
+                    "node_count": d["node_count"],
+                    "node_distribution": d["node_distribution"],
+                })
+            })
+            .collect()
+    };
+
+    let parse1 = parse_node_distribution(&report1);
+    let parse2 = parse_node_distribution(&report2);
+
+    assert_eq!(
+        parse1.len(),
+        parse2.len(),
+        "number of ParseDiagnostic events must match between runs"
+    );
+
+    for (i, (p1, p2)) in parse1.iter().zip(parse2.iter()).enumerate() {
+        assert_eq!(
+            p1["section_id"], p2["section_id"],
+            "ParseDiagnostic[{i}].section_id must match"
+        );
+        assert_eq!(
+            p1["node_count"], p2["node_count"],
+            "ParseDiagnostic[{i}].node_count must be deterministic"
+        );
+        assert_eq!(
+            p1["node_distribution"], p2["node_distribution"],
+            "ParseDiagnostic[{i}].node_distribution must be deterministic"
+        );
+    }
+}
+

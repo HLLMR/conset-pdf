@@ -28,6 +28,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
+use conset_pdf_engine::{
+    extractor::Extractor,
+    parse::parse_section_with_stats,
+    segment::segment_transcript,
+};
+use conset_pdf_ir::{AstNode, OutlineTag};
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
@@ -116,6 +122,17 @@ enum Commands {
         /// Validate arguments and fixture inventory only; skip all processing.
         #[arg(long)]
         dry_run: bool,
+
+        /// Engine pipeline stage to validate: "segment" or "parse".
+        ///
+        /// When absent, runs heuristic pattern-family validation.
+        /// When set to "segment", extracts and segments every fixture and checks
+        /// that `coverage_ratio >= 0.90` and `section_count >= 1`.
+        /// When set to "parse", also runs the paragraph parser on every section
+        /// and checks that the unclassified-node rate is `<= 0.01`.
+        /// Emits `corpus-report.json` in the output directory.
+        #[arg(long, value_name = "STAGE")]
+        pipeline: Option<String>,
     },
 }
 
@@ -181,8 +198,12 @@ fn main() -> Result<()> {
         Commands::TestPattern { pdf_path, family, output_dir, dry_run } => {
             run_test_pattern(&pdf_path, &family, &output_dir, dry_run)
         }
-        Commands::ValidateCorpus { tiers, corpus_dir, output_dir, dry_run } => {
-            run_validate_corpus(&tiers, &corpus_dir, &output_dir, dry_run)
+        Commands::ValidateCorpus { tiers, corpus_dir, output_dir, dry_run, pipeline } => {
+            if let Some(stage) = pipeline {
+                run_validate_corpus_pipeline(&tiers, &corpus_dir, &output_dir, dry_run, &stage)
+            } else {
+                run_validate_corpus(&tiers, &corpus_dir, &output_dir, dry_run)
+            }
         }
     }
 }
@@ -1058,6 +1079,15 @@ fn serialize_sidecar_for_family(
 
 // ── validate-corpus ───────────────────────────────────────────────────────────
 
+/// Minimum fraction of pages that must have a detected section ID (0.90 = 90%).
+const CORPUS_MIN_COVERAGE: f64 = 0.90;
+
+/// Maximum fraction of AST nodes that may be `Unclassified` (0.01 = 1%).
+const CORPUS_MAX_UNCLASSIFIED: f64 = 0.01;
+
+/// Minimum number of CSI sections a fixture must contain to pass.
+const CORPUS_MIN_SECTION_COUNT: usize = 1;
+
 /// Stable FNV-1a 64-bit content fingerprint.
 ///
 /// Used for determinism checking between validate-corpus runs: if the same sidecar
@@ -1569,6 +1599,278 @@ fn run_validate_corpus(
              from the previous run — check determinism_note in the manifest."
         );
     }
+
+    Ok(())
+}
+
+// ── Pipeline corpus validation (8.3.A/B) ─────────────────────────────────────
+
+/// Recursively walk an `AstNode` tree, returning `(total_nodes, unclassified_nodes)`.
+fn count_ast_nodes(nodes: &[AstNode]) -> (usize, usize) {
+    let mut total = 0usize;
+    let mut unclassified = 0usize;
+    for node in nodes {
+        total += 1;
+        if node.tag == OutlineTag::Unclassified {
+            unclassified += 1;
+        }
+        let (ct, cu) = count_ast_nodes(&node.children);
+        total += ct;
+        unclassified += cu;
+    }
+    (total, unclassified)
+}
+
+/// Batch-run the engine pipeline (`segment` or `parse`) against all fixtures
+/// in the requested tiers and emit a `corpus-report.json`.
+///
+/// Pass/fail thresholds:
+/// - `CORPUS_MIN_COVERAGE` (0.90) — fraction of pages with a footer section ID
+/// - `CORPUS_MIN_SECTION_COUNT` (1) — minimum sections detected
+/// - `CORPUS_MAX_UNCLASSIFIED` (0.01) — unclassified AST node fraction (parse only)
+// The serde_json::json! macro calls .unwrap() internally on infallible operations.
+#[allow(clippy::disallowed_methods)]
+fn run_validate_corpus_pipeline(
+    tiers: &[u8],
+    corpus_dir: &Path,
+    output_dir: &Path,
+    dry_run: bool,
+    pipeline_stage: &str,
+) -> Result<()> {
+    match pipeline_stage {
+        "segment" | "parse" => {}
+        other => bail!("--pipeline must be 'segment' or 'parse', got: '{other}'"),
+    }
+
+    for &tier in tiers {
+        if tier == 0 || tier > 2 {
+            bail!(
+                "Only --tier 1 and --tier 2 are permitted. \
+                 Tier 3 and holdout are prohibited by corpus policy."
+            );
+        }
+    }
+    if tiers.is_empty() {
+        bail!("Specify at least one --tier (1 or 2).");
+    }
+
+    let mut fixtures: Vec<(u8, PathBuf)> = Vec::new();
+    for &tier in tiers {
+        let tier_dir = corpus_dir.join(format!("tier{tier}"));
+        if !tier_dir.exists() {
+            eprintln!("WARNING: tier directory not found, skipping: {}", tier_dir.display());
+            continue;
+        }
+        for entry in std::fs::read_dir(&tier_dir)
+            .with_context(|| format!("Failed to read tier dir: {}", tier_dir.display()))?
+            .flatten()
+        {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("pdf") {
+                fixtures.push((tier, p));
+            }
+        }
+    }
+    fixtures.sort_by(|a, b| a.1.cmp(&b.1));
+
+    if dry_run {
+        println!(
+            "[dry-run] validate-corpus --pipeline {pipeline_stage}: tiers={tiers:?} \
+             fixtures={} corpus_dir={} output_dir={}",
+            fixtures.len(),
+            corpus_dir.display(),
+            output_dir.display()
+        );
+        for (tier, f) in &fixtures {
+            println!("  [dry-run] tier{tier}  {}", f.display());
+        }
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(output_dir)
+        .with_context(|| format!("Failed to create output dir: {}", output_dir.display()))?;
+
+    let generated_at = Utc::now().to_rfc3339();
+    let extractor = Extractor::new();
+
+    let mut fixture_records: Vec<serde_json::Value> = Vec::new();
+    let mut total_passed = 0u32;
+    let mut total_failed = 0u32;
+    let mut total_errored = 0u32;
+
+    for (fixture_num, (tier, fixture_path)) in fixtures.iter().enumerate() {
+        let stem = fixture_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        println!(
+            "\n[{}/{}] tier{}  {}",
+            fixture_num + 1,
+            fixtures.len(),
+            tier,
+            stem
+        );
+
+        let path_str = match fixture_path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ERROR: non-UTF-8 path — skipping");
+                total_errored += 1;
+                continue;
+            }
+        };
+
+        // ── Extract ──────────────────────────────────────────────────────────
+        let transcript = match extractor.extract(path_str) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  ERROR: extraction failed — {e}");
+                total_errored += 1;
+                fixture_records.push(serde_json::json!({
+                    "stem": stem,
+                    "tier": tier,
+                    "pdf_path": path_str,
+                    "pass": false,
+                    "error": e.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        // ── Segment ──────────────────────────────────────────────────────────
+        let index = match segment_transcript(&transcript) {
+            Ok(i) => i,
+            Err(e) => {
+                eprintln!("  ERROR: segmentation failed — {e}");
+                total_errored += 1;
+                fixture_records.push(serde_json::json!({
+                    "stem": stem,
+                    "tier": tier,
+                    "pdf_path": path_str,
+                    "pass": false,
+                    "error": e.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        let section_count = index.sections.len();
+        let coverage_ratio = index.coverage.coverage_ratio;
+        let mut issues: Vec<String> = Vec::new();
+
+        if section_count < CORPUS_MIN_SECTION_COUNT {
+            issues.push(format!(
+                "section_count {section_count} < min {CORPUS_MIN_SECTION_COUNT}"
+            ));
+        }
+        if coverage_ratio < CORPUS_MIN_COVERAGE {
+            issues.push(format!(
+                "coverage_ratio {coverage_ratio:.4} < min {CORPUS_MIN_COVERAGE}"
+            ));
+        }
+
+        // ── Parse (optional) ─────────────────────────────────────────────────
+        let unclassified_ratio: Option<f64> = if pipeline_stage == "parse" {
+            let mut total_nodes = 0usize;
+            let mut total_unclassified = 0usize;
+            for section_entry in &index.sections {
+                let (section_ast, _stats) =
+                    parse_section_with_stats(&transcript, section_entry);
+                let (nodes, uncl) = count_ast_nodes(&section_ast.nodes);
+                total_nodes += nodes;
+                total_unclassified += uncl;
+            }
+            let ratio = if total_nodes == 0 {
+                0.0
+            } else {
+                total_unclassified as f64 / total_nodes as f64
+            };
+            if ratio > CORPUS_MAX_UNCLASSIFIED {
+                issues.push(format!(
+                    "unclassified_ratio {ratio:.4} > max {CORPUS_MAX_UNCLASSIFIED} \
+                     ({total_unclassified}/{total_nodes} nodes)"
+                ));
+            }
+            println!(
+                "  sections={section_count}  coverage={coverage_ratio:.3}  \
+                 unclassified={ratio:.4}  nodes={total_nodes}  issues={}",
+                issues.len()
+            );
+            Some(ratio)
+        } else {
+            println!(
+                "  sections={section_count}  coverage={coverage_ratio:.3}  issues={}",
+                issues.len()
+            );
+            None
+        };
+
+        let pass = issues.is_empty();
+        if pass {
+            total_passed += 1;
+        } else {
+            total_failed += 1;
+            for issue in &issues {
+                eprintln!("  FAIL: {issue}");
+            }
+        }
+
+        let mut record = serde_json::json!({
+            "stem": stem,
+            "tier": tier,
+            "pdf_path": path_str,
+            "pass": pass,
+            "section_count": section_count,
+            "coverage_ratio": coverage_ratio,
+            "issues": issues,
+        });
+        if let Some(ratio) = unclassified_ratio {
+            record["unclassified_ratio"] = serde_json::json!(ratio);
+        }
+        fixture_records.push(record);
+    }
+
+    let total = total_passed + total_failed + total_errored;
+    let pass_rate = if total == 0 {
+        1.0f64
+    } else {
+        f64::from(total_passed) / f64::from(total)
+    };
+
+    let report = serde_json::json!({
+        "schema_version": "0.1.0",
+        "generated_at": generated_at,
+        "pipeline": pipeline_stage,
+        "thresholds": {
+            "min_coverage": CORPUS_MIN_COVERAGE,
+            "max_unclassified": CORPUS_MAX_UNCLASSIFIED,
+            "min_section_count": CORPUS_MIN_SECTION_COUNT,
+        },
+        "aggregate": {
+            "total": total,
+            "passed": total_passed,
+            "failed": total_failed,
+            "errored": total_errored,
+            "pass_rate": pass_rate,
+        },
+        "fixtures": fixture_records,
+    });
+
+    let report_path = output_dir.join("corpus-report.json");
+    std::fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&report)? + "\n",
+    )
+    .with_context(|| format!("Failed to write: {}", report_path.display()))?;
+
+    println!(
+        "\n[validate-corpus --pipeline {pipeline_stage}] \
+         passed={total_passed} failed={total_failed} errored={total_errored} \
+         total={total} pass_rate={:.1}%",
+        pass_rate * 100.0
+    );
+    println!("  report: {}", report_path.display());
 
     Ok(())
 }

@@ -82,6 +82,7 @@ mod tests {
             input_path: "input.pdf".to_owned(),
             output_path: None,
             options: WorkflowOptions::default(),
+            intake_bundle: None,
         };
 
         let response = cmd_parse(request);

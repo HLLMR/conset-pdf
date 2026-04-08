@@ -21,6 +21,7 @@
 pub mod edit;
 pub mod error;
 pub mod extractor;
+pub mod intake;
 pub mod parse;
 pub mod pipeline;
 pub mod processor;
@@ -34,6 +35,7 @@ pub mod visualize_ast;
 pub use edit::SectionEditor;
 pub use error::EngineError;
 pub use extractor::Extractor;
+pub use intake::Stage0Normalizer;
 pub use processor::Processor;
 pub use render::SectionRenderer;
 pub use specs_patch::SpecsPatchOrchestrator;

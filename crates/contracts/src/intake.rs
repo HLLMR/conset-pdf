@@ -10,8 +10,47 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Schema version applied to all intake contract types.
+/// Stability version for all intake contract types.
 pub const INTAKE_SCHEMA_VERSION: &str = "0.5.0";
+
+// ── Intake bundle ─────────────────────────────────────────────────────────
+
+/// The role of a file within an [`IntakeBundle`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IntakeRole {
+    /// The original, un-redlined specification PDF.
+    OriginalSpec,
+    /// An addendum (mark-up or replacement pages) to the original spec.
+    AddendumSpec,
+    /// A set of drawing sheets associated with a specification.
+    DrawingSet,
+    /// Role could not be determined at intake time.
+    Unknown,
+}
+
+/// A single file within an [`IntakeBundle`] with its assigned role.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntakeFile {
+    /// Filesystem path to the PDF file.
+    pub path: String,
+    /// Role of this file within the intake set.
+    pub role: IntakeRole,
+}
+
+/// Input descriptor for Stage 0 intake triage.
+///
+/// Describes a set of PDF files to be normalized together.  Downstream
+/// phases consume the [`NormalizedIntakeBundle`] produced by processing
+/// this input through [`Stage0Normalizer`](conset_pdf_engine::Stage0Normalizer).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntakeBundle {
+    /// Files to process, each with an assigned role.
+    pub files: Vec<IntakeFile>,
+    /// Optional explicit ordering of file paths within the set (overrides
+    /// filesystem order when present).
+    pub declared_order: Option<Vec<String>>,
+}
 
 // ── Document classification ────────────────────────────────────────────────
 
@@ -282,5 +321,35 @@ mod tests {
         let s = serde_json::to_string(&cls).unwrap();
         let back: DocumentClass = serde_json::from_str(&s).unwrap();
         assert_eq!(back, DocumentClass::Addendum);
+    }
+
+    #[test]
+    fn intake_role_round_trips_via_serde() {
+        for role in [
+            IntakeRole::OriginalSpec,
+            IntakeRole::AddendumSpec,
+            IntakeRole::DrawingSet,
+            IntakeRole::Unknown,
+        ] {
+            let s = serde_json::to_string(&role).unwrap();
+            let back: IntakeRole = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, role);
+        }
+    }
+
+    #[test]
+    fn intake_bundle_round_trips_via_serde() {
+        let bundle = IntakeBundle {
+            files: vec![
+                IntakeFile { path: "spec.pdf".to_owned(), role: IntakeRole::OriginalSpec },
+                IntakeFile { path: "add1.pdf".to_owned(), role: IntakeRole::AddendumSpec },
+            ],
+            declared_order: Some(vec!["spec.pdf".to_owned(), "add1.pdf".to_owned()]),
+        };
+        let json = serde_json::to_string_pretty(&bundle).unwrap();
+        let back: IntakeBundle = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.files.len(), 2);
+        assert_eq!(back.files[0].role, IntakeRole::OriginalSpec);
+        assert_eq!(back.declared_order.unwrap(), vec!["spec.pdf", "add1.pdf"]);
     }
 }

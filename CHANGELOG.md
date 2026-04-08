@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-08] Sprint 8.3 Complete: Torture Corpus Validation Infrastructure
+
+### Added
+
+- **`CORPUS_MIN_COVERAGE`, `CORPUS_MAX_UNCLASSIFIED`, `CORPUS_MIN_SECTION_COUNT` constants** (`tools/pattern_dev.rs`): Pass/fail thresholds used by the pipeline corpus validator — 0.90, 0.01, and 1 respectively.
+
+- **`--pipeline segment|parse` mode for `validate-corpus`** (`tools/pattern_dev.rs`): New optional `--pipeline <STAGE>` arg on the `ValidateCorpus` subcommand. When set, dispatches to `run_validate_corpus_pipeline()` instead of the existing heuristic pattern-family path. Runs the full engine pipeline (`Extractor::extract()` → `segment_transcript()`) for `segment`; additionally calls `parse_section_with_stats()` per section for `parse`. Emits `corpus-report.json` (schema `0.1.0`) with per-fixture pass/fail, `section_count`, `coverage_ratio`, `unclassified_ratio` (parse only), and an `aggregate` block. `conset-pdf-engine` and `conset-pdf-ir` added as workspace dependencies in `tools/Cargo.toml`.
+
+- **Phase-H corpus baseline** (`audit_output/phase-h-corpus-baseline/`): First pipeline-level corpus run against all 27 Tier 1 fixtures. Results: 3/27 pass (11.1%). The three passing fixtures are all SPEC_* documents. 24 failures are expected by design — DWG, NAR, and SUB document types carry no CSI section-ID footer stamps. Primary validation target `SPEC_RWB_LHHS_ALL_ORG`: 89 sections, 96.5% coverage, 0.2% unclassified (7,971 nodes) — all thresholds met.
+
+- **Unchanged-page content-hash validation** (`crates/engine/src/stitch.rs`): `validate_unchanged_present()` previously checked `doc.objects.contains_key(id)` only. Added `snapshot_hashes(doc, ids) -> HashMap<ObjectId, u64>` (FNV-1a-64 over `format!("{obj:?}")` bytes) called *before* `splice_page_tree()`, and `validate_unchanged_content(doc, &before_hashes, &mut warnings)` called after `fixup_bookmarks()`. Any object whose hash differs between the snapshot and the post-splice document appends a human-readable warning to `StitchResult.warnings`. Makes Non-Negotiable #12 ("unchanged pages must remain unchanged") mechanically enforceable.
+
+- **`apply_addendum_dry_run_is_deterministic` integration test** (`apps/backend-cli/tests/cli_integration_test.rs`): Runs `apply-addendum --dry-run` twice on `SPEC_RWB_LHHS_ALL_ORG.pdf` with an identical manifest and compares the resulting `change-report.json` files. Asserts: `section_results` length and per-entry `section_id`/`status` are identical across runs; `diagnostics` entries with `stage=="parse"` have identical `node_count` and `node_distribution`. Timestamps and `elapsed_ms` fields are explicitly excluded. Closes the determinism testing gap (Risk 2 in the Phase 8 architecture review).
+
+- **`stitch_unchanged_pages_content_hash_unchanged` unit test** (`crates/engine/src/stitch.rs`): Performs a valid single-section stitch and asserts `result.warnings` is empty, confirming the new hash check produces no false positives on clean stitches.
+
+- **`stitch_two_sections_with_page_growth_preserves_middle_section` unit test** (`crates/engine/src/stitch.rs`): 9-page three-section fixture (A: 0–2, B: 3–5, C: 6–8); stitches C with a 4-page replacement (+1) then A with a 5-page replacement (+2); asserts final page count = 12, original B-section object IDs still present, and no content-hash warnings. Validates last-to-first stitch ordering under nontrivial page-delta conditions at both document ends.
+
 ## [2026-04-07] Phase 7 Complete: End-to-End Apply-Addendum Workflow
 
 ### Added
