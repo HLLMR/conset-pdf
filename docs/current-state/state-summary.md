@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 2.8.0
-**Date:** April 7, 2026
+**Version:** 2.9.0
+**Date:** April 8, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -58,15 +58,74 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 
 ## Next Focus
 
-- **Phase 6 is COMPLETE.** All tasks delivered and tested.
-- **Pre-Phase-7 cleanup complete (April 7, 2026):** `SectionEntry.section_title` now populated from footer title cluster — `detect_section_id()` returns `(id, title)` tuple; `extract_title_from_clusters()` strips leading em-dash/hyphen variants and skips page-counter clusters; `build_sections()` picks the first non-empty title in each run. 12 new unit tests added; engine baseline is now **65/65 unit tests** (was 53). `state-summary.md` and `MASTER_PLAN.md` dependency graph updated.
-- **Phase 7 is COMPLETE (April 7, 2026):** End-to-end `apply-addendum` workflow fully implemented and tested.
+- **Sprints 8.5, 8.6, 8.7 can proceed in parallel** — all Phase 9 prerequisites (8.1.H, 8.3.D, 8.3.E, 8.4.B) are now complete.
+  - **8.5** — `metrics.json` executive summary roll-up in every audit bundle (derives from `diagnostics.jsonl` already populated by 8.1.G).
+  - **8.6** — Pattern database as versioned JSON (`PatternDatabase` struct, `default.json`, version-locked in audit bundle).
+  - **8.7** — User documentation: `docs/CLI_REFERENCE.md` + `docs/WORKFLOW_APPLYADDENDUM.md`.
+- **Phase 9 (Drawing Sheet Management)** can begin planning — all entry prerequisites are met.
   - **IR types:** `crates/ir/src/addendum.rs` — `AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`; 12 new unit tests.
   - **Orchestrator:** `crates/engine/src/specs_patch.rs` — `SpecsPatchOrchestrator::run()` — Extract → Segment → Parse → Edit → Render → Stitch (last-to-first); partial-success semantics; chrome metadata merge (base + manifest override + per-section override); 5 unit tests.
   - **Handler:** `apps/backend-cli/src/handlers/apply_addendum.rs` — loads addendum manifest, delegates to orchestrator, writes audit bundle.
   - **CLI:** `apply-addendum` subcommand — `--original`, `--addendum`, `--output` (optional), `--audit-bundle` (optional), `--dry-run`.
   - **Integration tests:** 5 non-Chrome tests pass (dry-run, missing-original, missing-manifest, unknown-section continues, audit artifacts); 1 Chrome test `#[ignore]`.
   - **Test baseline:** 41/41 CLI integration (36 pre-Phase-7 + 5 Phase-7), **77/77** engine unit (65 pre-Phase-7 + 5 specs_patch + 7 prior), 30/30 IR unit. See `CHANGELOG.md`.
+
+- **Sprint 8.1 COMPLETE (April 7, 2026):** Crash containment, error hardening, structured diagnostics pipeline.
+  - Panic audit: zero panics reachable from valid-but-corrupt PDF input (`unwrap()`/`expect()` replaced with `Result` propagation).
+  - `MAX_PDF_PAGES = 2_000` page cap with `EngineError::PdfTooLarge { page_count, max }`.
+  - Actionable error messages audit for `StitchError`, `ParseError`, `SectionPatchResult::Failed`.
+  - `DiagnosticEvent` IR type (`crates/ir/src/diagnostics.rs`) with 6 stage variants: `ExtractionDiagnostic`, `SegmentationDiagnostic`, `ParseDiagnostic` (with `UnclassifiedNodeTrace`), `EditDiagnostic`, `RenderDiagnostic` (with `RenderOutcome`), `StitchDiagnostic`; all `#[non_exhaustive]`; added to `AddendumResult.diagnostics: Vec<DiagnosticEvent>`.
+  - Per-stage diagnostic emission wired into `SpecsPatchOrchestrator::run()`.
+  - `diagnostics.jsonl` written to `--audit-bundle` dir (newline-delimited JSON, schema header line, 8 MB cap).
+  - Temp directory RAII cleanup: `tempfile::TempDir` replaces bare `PathBuf` in orchestrator.
+  - Chrome binary version captured: `probe_chrome_version()` in `render/chrome_pdf.rs`; stored in `RenderDiagnostic.chrome_binary_version`.
+  - **Test delta:** +6 CLI integration; +9 engine unit (+1 ignored); +7 IR serde round-trips.
+
+- **Sprint 8.2 COMPLETE (April 8, 2026):** Intake triage Stage 0 (closes G-013, G-016).
+  - `IntakeBundle`, `IntakeFile`, `IntakeRole`, `NormalizedIntakeBundle`, `IntakeIssue` contract types in `crates/contracts/src/intake.rs`.
+  - `WorkflowOperation::Intake` added; `intake_bundle: Option<IntakeBundle>` added to `WorkflowRequest` (`#[serde(default)]`).
+  - `Stage0Normalizer` in `crates/engine/src/intake.rs` — rotation detection (PDFium `/Rotate`) + lopdf in-place normalization.
+  - `intake` CLI subcommand with `--input`, `--output`, `--dry-run`.
+  - **Test delta:** +2 contracts; +7 engine; +3 CLI integration.
+
+- **Sprint 8.3 COMPLETE (April 8, 2026):** Corpus validation infrastructure + structural contracts.
+  - `--pipeline segment|parse` mode added to `pattern-dev validate-corpus`; pass/fail constants: `CORPUS_MIN_COVERAGE=0.90`, `CORPUS_MAX_UNCLASSIFIED=0.01`, `CORPUS_MIN_SECTION_COUNT=1`.
+  - Corpus baseline run: `audit_output/phase-h-corpus-baseline/corpus-report.json`; 3/27 pass (SPEC_* pass; DWG/NAR/SUB fail by design — no CSI footer IDs). Primary fixture `SPEC_RWB_LHHS_ALL_ORG`: 89 sections, 96.5% coverage, 0.2% unclassified.
+  - Determinism regression test: `apply_addendum_dry_run_is_deterministic` — two identical dry-run invocations, compares `change-report.json` (section_results, node_count, node_distribution; timestamps/elapsed excluded).
+  - Unchanged-page content-hash validation: `snapshot_hashes()` + `validate_unchanged_content()` + FNV-1a-64 over `Debug` bytes in `stitch.rs`.
+  - Multi-section page-growth regression test: 9-page three-section fixture, stitch C (+1) then A (+2), assert 12-page output with B-section objects intact.
+  - **Test delta:** +1 CLI integration; +2 engine unit (`stitch.rs`).
+
+- **Sprint 8.4 COMPLETE (April 8, 2026):** Performance benchmark + architecture constraint documentation.
+  - `apply_addendum_benchmark_large_spec` `#[ignore]` integration test: SPEC_RWB_LHHS_ALL_ORG.pdf (571 pp); picks first/middle/last sections from segment index; runs dry-run; measures wall time via `Instant` + per-stage `elapsed_ms` from `diagnostics.jsonl`; asserts < 10,000 ms; writes `audit_output/phase-h-perf/benchmark-large-spec.json`.
+  - `ARCHITECTURE.md` v4.9.0: new "Known Design Constraints" section — Constraint 1: full-document extraction per operation (O(n\_pages) cost model, affected call site, Phase 9 range-bounded mitigation path, 4-step decision checklist). ToC updated; Revision History extended.
+  - **Test delta:** +1 CLI integration (`#[ignore]`).
+
+- **Sprint 8.5 COMPLETE (April 8, 2026):** `metrics.json` executive summary roll-up in every audit bundle.
+  - `build_metrics()` helper in `apply_addendum.rs` derives all values from `result.diagnostics` (no independent state); writes `metrics.json` (schema `"metrics/v1"`) alongside `change-report.json` + `diagnostics.jsonl`.
+  - Fields: `total_pages_input`, `total_pages_output`, `sections_detected`, `sections_patched`, `section_coverage_ratio`, `total_elapsed_ms`, `per_section[]` (per-section node counts + timings).
+  - 8.5.B pre-done: `SegmentIndex.coverage.coverage_ratio` + `pages_missing_footer` already populated.
+  - **Test delta:** +2 CLI integration.
+
+- **Sprint 8.6 COMPLETE (April 8, 2026):** Pattern database as versioned JSON.
+  - `crates/engine/src/patterns/mod.rs`: `RegionBand`, `PatternSpec`, `PatternDatabase`, `PatternDatabase::load_default()` (embedded via `include_str!()`).
+  - `crates/engine/src/patterns/default.json` (v1.0.0): three families — `footer-section-id` (bottom, 0.95), `page-counter` (bottom, 0.98), `header-band` (top, 0.0).
+  - Fail-fast load at start of `SpecsPatchOrchestrator::run()`; `pattern_db_version: "1.0.0"` written to `change-report.json`.
+  - **Test delta:** +1 engine unit (`default_pattern_database_parses_successfully`); +1 CLI integration (`cli_apply_addendum_change_report_contains_pattern_db_version`).
+
+- **Sprint 8.7 COMPLETE (April 8, 2026):** User documentation — Phase 8 fully closed.
+  - `docs/CLI_REFERENCE.md`: all 11 subcommands (args, output format, exit codes, examples); `apply-addendum` audit bundle contents table; error codes + resolution guide (`MISSING_MANIFEST_PATH`, `MANIFEST_READ_ERROR`, `EMPTY_MANIFEST`, `AUDIT_DIR_CREATE_ERROR`, `ORCHESTRATOR_ERROR`); per-section failure table by pipeline stage.
+  - `docs/WORKFLOW_APPLYADDENDUM.md`: end-to-end tutorial from section inspection through manifest authoring, dry-run, production run, and audit bundle interpretation; full `AddendumManifest` / `SectionEditSpec` / `EditOperation` / `SpecChromeMetadata` JSON reference; multi-section + partial-success examples.
+  - **No code changes** (documentation sprint only).
+
+## Current Test Baseline (Sprint 8.7 / Phase 8 COMPLETE)
+
+| Suite | Passing | Ignored |
+|---|---|---|
+| CLI integration | 46 | 3 (2 Chrome + 1 benchmark) |
+| Engine unit | 92+ | 3 (Chrome) |
+| IR unit | 37 | — |
+| Corpus pipeline | 3/27 tier1 pass | (DWG/NAR/SUB by design) |
 
 ---
 

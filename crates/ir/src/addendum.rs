@@ -200,6 +200,13 @@ pub struct AddendumResult {
     /// without this field remain deserializable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<DiagnosticEvent>,
+
+    /// Version string of the pattern database used during this run
+    /// (e.g. `"1.0.0"`).
+    ///
+    /// `None` only for `change-report.json` files produced before Sprint 8.6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern_db_version: Option<String>,
 }
 
 impl AddendumResult {
@@ -220,6 +227,7 @@ impl AddendumResult {
             section_results,
             output_path,
             diagnostics: vec![],
+            pattern_db_version: None,
         }
     }
 }

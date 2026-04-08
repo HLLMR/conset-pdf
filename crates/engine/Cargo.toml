@@ -21,5 +21,7 @@ env_logger.workspace = true
 regex.workspace = true
 lopdf.workspace = true
 tempfile.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
 
 [dev-dependencies]

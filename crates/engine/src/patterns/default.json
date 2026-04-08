@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "patterns": {
+    "footer-section-id": {
+      "regex": "\\b(\\d{2})\\s+(\\d{2})(?:\\s+(\\d{2}))?\\b",
+      "confidence_threshold": 0.95,
+      "band": "bottom",
+      "examples": ["23 05 00", "08 71 00", "23 82 16"]
+    },
+    "page-counter": {
+      "regex": "(?i)\\bpage\\s+\\d+\\s+of\\s+\\d+\\b",
+      "confidence_threshold": 0.98,
+      "band": "bottom",
+      "examples": ["Page 1 of 12", "PAGE 3 OF 7"]
+    },
+    "header-band": {
+      "regex": ".*",
+      "confidence_threshold": 0.0,
+      "band": "top",
+      "examples": []
+    }
+  }
+}

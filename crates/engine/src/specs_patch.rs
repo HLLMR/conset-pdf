@@ -38,6 +38,7 @@ use conset_pdf_ir::{
 use crate::{
     edit::SectionEditor,
     extractor::Extractor,
+    patterns::PatternDatabase,
     render::SectionRenderer,
     stitch::PdfStitcher,
 };
@@ -72,6 +73,10 @@ impl SpecsPatchOrchestrator {
         dry_run: bool,
     ) -> Result<AddendumResult, String> {
         let mut diagnostics: Vec<DiagnosticEvent> = Vec::new();
+
+        // ── Step 0: Pattern database ──────────────────────────────────────────
+        // Fail fast if the embedded default.json is ever accidentally malformed.
+        let pattern_db = PatternDatabase::load_default()?;
 
         // ── Step 1: Extract ───────────────────────────────────────────────────
         let extract_start = std::time::Instant::now();
@@ -513,6 +518,7 @@ impl SpecsPatchOrchestrator {
             final_output_path,
         );
         result.diagnostics = diagnostics;
+        result.pattern_db_version = Some(pattern_db.version);
         Ok(result)
     }
 }

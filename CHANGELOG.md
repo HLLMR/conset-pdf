@@ -2,6 +2,59 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-08] Sprint 8.7 Complete: User Documentation — Phase 8 CLOSED
+
+### Added
+
+- **`docs/CLI_REFERENCE.md`** — Full reference for all 11 `backend-cli` subcommands (`extract`, `segment`, `parse`, `edit`, `regenerate`, `stitch`, `apply-addendum`, `intake`, `visualize`, `visualize-segments`, `visualize-ast`). Each entry covers: description, required/optional arguments, output format, invocation example. Global output format (`WorkflowResponse` JSON) and exit code contract documented. Error codes table for `apply-addendum` (`MISSING_MANIFEST_PATH`, `MANIFEST_READ_ERROR`, `EMPTY_MANIFEST`, `AUDIT_DIR_CREATE_ERROR`, `ORCHESTRATOR_ERROR`), per-section failure table by stage (Parse / Edit / Render / Stitch), and extract/segment/parse summary error table.
+
+- **`docs/WORKFLOW_APPLYADDENDUM.md`** — End-to-end `apply-addendum` tutorial. Covers: prerequisites, pipeline diagram, section inspection with `extract` + `segment`, AST inspection with `parse` + `visualize-ast`, manifest authoring, `--dry-run` validation, production run, and audit bundle analysis (`change-report.json`, `diagnostics.jsonl`, `metrics.json`). Includes complete `AddendumManifest`, `SectionEditSpec`, `EditOperation` (replace / delete / insert_after), `NodePath`, and `SpecChromeMetadata` JSON reference tables. Multi-section manifest example and partial-success behaviour documented.
+
+## [2026-04-08] Sprint 8.6 Complete: Pattern Database as Versioned JSON
+
+### Added
+
+- **`crates/engine/src/patterns/mod.rs`** — `RegionBand` enum (`Top`, `Bottom`, `Full`), `PatternSpec { regex, confidence_threshold, band, examples }`, `PatternDatabase { version, patterns: HashMap<FamilyId, PatternSpec> }`, `PatternDatabase::load_default()` which embeds and parses `default.json` at compile time via `include_str!()`. Fail-fast: returns a human-readable `Err` if the JSON is malformed.
+
+- **`crates/engine/src/patterns/default.json`** (version `"1.0.0"`) — three pattern families: `footer-section-id` (bottom band, confidence 0.95, regex matching CSI two/three–group section IDs), `page-counter` (bottom band, confidence 0.98, case-insensitive `Page N of M`), `header-band` (top band, geometric placeholder, threshold 0.0).
+
+- **`pattern_db_version` field in `AddendumResult`** (`crates/ir/src/addendum.rs`) — `Option<String>`, serde skip-if-none for back-compat with pre-8.6 `change-report.json` files. Set to `"1.0.0"` by `SpecsPatchOrchestrator::run()`.
+
+- **`PatternDatabase::load_default()` called at startup** (`crates/engine/src/specs_patch.rs`, Step 0 before extraction) — ensures the pipeline fails with a clear error rather than a regex panic if `default.json` is ever accidentally malformed.
+
+- **`default_pattern_database_parses_successfully` unit test** (`crates/engine/src/patterns/mod.rs`) — verifies all three family entries, `RegionBand` values, and non-empty version and regex fields.
+
+- **`cli_apply_addendum_change_report_contains_pattern_db_version` integration test** (`apps/backend-cli/tests/cli_integration_test.rs`) — runs `apply-addendum --dry-run`, asserts `change-report.json` contains `pattern_db_version == "1.0.0"`.
+
+### Changed
+
+- `crates/engine/Cargo.toml` — `serde` and `serde_json` workspace dependencies added (required by new `patterns` module).
+- `crates/engine/src/lib.rs` — `pub mod patterns` declared.
+
+## [2026-04-08] Sprint 8.5 Complete: Metrics Output in Audit Bundle
+
+### Added
+
+- **`metrics.json` in `--audit-bundle` directory** (`apps/backend-cli/src/handlers/apply_addendum.rs`): Written alongside `change-report.json` and `diagnostics.jsonl` after every `apply-addendum` invocation. Schema `"metrics/v1"`. Fields: `total_pages_input`, `total_pages_output`, `sections_detected`, `sections_patched`, `section_coverage_ratio`, `total_elapsed_ms`, and `per_section` array (one entry per parsed section with `section_id`, `parse_node_count`, `unclassified_count`, `unclassified_ratio`, `render_ms` (null on dry-run), `stitch_ms`). All values are derived from `AddendumResult.diagnostics` — `metrics.json` has no independent state and is always consistent with `diagnostics.jsonl`.
+
+- **`build_metrics()` private helper** (`apps/backend-cli/src/handlers/apply_addendum.rs`): Walks `result.diagnostics` once to collect per-stage data (`ExtractionDiagnostic` for page count + elapsed, `SegmentationDiagnostic` for coverage, `ParseDiagnostic` per section for node counts, `RenderDiagnostic`/`StitchDiagnostic` for per-section timing). `total_pages_output` uses saturating arithmetic on pages removed/inserted. `unclassified_ratio` rounded to 3 decimal places.
+
+- **`cli_apply_addendum_writes_metrics_json` integration test** (`apps/backend-cli/tests/cli_integration_test.rs`): Runs `apply-addendum --dry-run` on the SPEC corpus fixture with 1 section; asserts `metrics.json` written to audit bundle, schema field is `"metrics/v1"`, and all required top-level fields present with valid types.
+
+- **`cli_apply_addendum_metrics_per_section_matches_manifest_sections` integration test**: Uses a 2-section manifest; asserts `per_section.len() == 2 == sections_patched` and each `per_section` entry contains the required fields.
+
+### Notes
+
+- **8.5.B was pre-done**: `SegmentIndex.coverage: CoverageStats` already held `coverage_ratio: f64` and `pages_missing_footer: usize` (populated by `SegmentEngine::build_index()`). No code change required for that sub-task.
+
+## [2026-04-08] Sprint 8.4 Complete: Performance Benchmark + Architecture Constraint Documentation
+
+### Added
+
+- **`apply_addendum_benchmark_large_spec` `#[ignore]` integration test** (`apps/backend-cli/tests/cli_integration_test.rs`): Exercises the full dry-run pipeline on the 571-page SPEC_RWB_LHHS_ALL_ORG corpus fixture with 3 real sections (first, middle, last from the segment index). Measures wall-clock time via `std::time::Instant` and reads per-stage `elapsed_ms` from `diagnostics.jsonl` in the audit bundle (extraction, segmentation, stitch). Asserts total elapsed < 10,000 ms. Writes `audit_output/phase-h-perf/benchmark-large-spec.json` with fields: date, fixture, sections_patched, dry_run, wall/extract/segment/stitch timing, threshold, and pass flag.
+
+- **"Known Design Constraints" section in `ARCHITECTURE.md` v4.9.0**: Documents Constraint 1 — full-document extraction per `apply-addendum` invocation. States: O(n\_pages) cost model, affected call site (`Extractor::extract()` in `SpecsPatchOrchestrator::run()`), rationale (segmentation requires full transcript for boundary detection; stitcher needs full `SegmentIndex` for unchanged-page hash validation), acceptable trade-off for current spec-book use cases, and Phase 9+ mitigation path (range-bounded `Extractor::extract_range()` API). Includes 4-step decision checklist required before Phase 9 batch architecture is locked. ToC updated (entry 9 added) and Revision History extended with v4.9.0 row.
+
 ## [2026-04-08] Sprint 8.3 Complete: Torture Corpus Validation Infrastructure
 
 ### Added

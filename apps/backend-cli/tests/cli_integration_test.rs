@@ -2112,6 +2112,197 @@ fn cli_apply_addendum_writes_diagnostics_jsonl() {
     );
 }
 
+// ── Sprint 8.5 — metrics.json tests ──────────────────────────────────────────
+
+/// Verifies that `metrics.json` is written to `--audit-bundle` on a dry-run
+/// and contains the expected top-level fields.
+#[test]
+fn cli_apply_addendum_writes_metrics_json() {
+    let tmp = tmp_dir("apply-addendum-metrics-json");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&segment_json).expect("read segment index"),
+    )
+    .expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    assert!(!sections.is_empty());
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("metrics json test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+    let audit_dir = tmp.join("audit-bundle");
+
+    run_apply_addendum(&spec_pdf, &manifest, None, Some(&audit_dir), true);
+
+    let metrics_path = audit_dir.join("metrics.json");
+    assert!(metrics_path.exists(), "metrics.json must be written to --audit-bundle directory");
+
+    let metrics_text = std::fs::read_to_string(&metrics_path).expect("read metrics.json");
+    let metrics: serde_json::Value =
+        serde_json::from_str(&metrics_text).expect("metrics.json must be valid JSON");
+
+    assert_eq!(metrics["schema"].as_str().unwrap_or(""), "metrics/v1");
+    assert!(metrics["generated_at"].as_str().is_some(), "generated_at required");
+    assert!(
+        metrics["total_pages_input"].as_u64().unwrap_or(0) > 0,
+        "total_pages_input must be > 0"
+    );
+    assert!(
+        metrics["total_pages_output"].as_u64().is_some(),
+        "total_pages_output required"
+    );
+    assert!(
+        metrics["sections_detected"].as_u64().unwrap_or(0) > 0,
+        "sections_detected must be > 0"
+    );
+    assert!(
+        metrics["section_coverage_ratio"].as_f64().is_some(),
+        "section_coverage_ratio required"
+    );
+    assert!(
+        metrics["total_elapsed_ms"].as_u64().is_some(),
+        "total_elapsed_ms required"
+    );
+    assert!(
+        metrics["per_section"].as_array().is_some(),
+        "per_section must be an array"
+    );
+}
+
+/// Verifies that the `per_section` array length matches `sections_patched`:
+/// one entry per section in the manifest that was parsed.
+#[test]
+fn cli_apply_addendum_metrics_per_section_matches_manifest_sections() {
+    let tmp = tmp_dir("apply-addendum-metrics-per-section");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&segment_json).expect("read segment index"),
+    )
+    .expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    // Use 2 sections to make the per_section count non-trivially verifiable.
+    assert!(sections.len() >= 2, "fixture must have ≥ 2 sections");
+    let id0 = sections[0]["section_id"].as_str().expect("section_id 0").to_owned();
+    let id1 = sections[1]["section_id"].as_str().expect("section_id 1").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[
+            (&id0, serde_json::json!([])),
+            (&id1, serde_json::json!([])),
+        ],
+    );
+    let audit_dir = tmp.join("audit-bundle");
+
+    run_apply_addendum(&spec_pdf, &manifest, None, Some(&audit_dir), true);
+
+    let metrics_text = std::fs::read_to_string(audit_dir.join("metrics.json"))
+        .expect("read metrics.json");
+    let metrics: serde_json::Value =
+        serde_json::from_str(&metrics_text).expect("parse metrics.json");
+
+    let sections_patched = metrics["sections_patched"].as_u64().expect("sections_patched") as usize;
+    let per_section = metrics["per_section"].as_array().expect("per_section array");
+
+    assert_eq!(
+        per_section.len(),
+        2,
+        "per_section must have one entry per manifest section"
+    );
+    assert_eq!(
+        sections_patched,
+        2,
+        "sections_patched must equal the manifest section count"
+    );
+    assert_eq!(
+        per_section.len(),
+        sections_patched,
+        "per_section.len() must equal sections_patched"
+    );
+
+    // Each per_section entry must have the required fields.
+    for entry in per_section {
+        assert!(entry["section_id"].as_str().is_some(), "section_id required in per_section");
+        assert!(entry["parse_node_count"].as_u64().is_some(), "parse_node_count required");
+        assert!(entry["unclassified_count"].as_u64().is_some(), "unclassified_count required");
+        assert!(entry["unclassified_ratio"].as_f64().is_some(), "unclassified_ratio required");
+        assert!(entry.get("stitch_ms").is_some(), "stitch_ms required");
+    }
+}
+
+// ── Sprint 8.6 — Pattern database version in change-report.json ──────────────
+
+/// Verifies that `change-report.json` written by `apply-addendum` contains a
+/// non-empty `pattern_db_version` field that matches the embedded default
+/// pattern database version.
+#[test]
+fn cli_apply_addendum_change_report_contains_pattern_db_version() {
+    let tmp = tmp_dir("apply-addendum-pattern-db-version");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&segment_json).expect("read segment index"),
+    )
+    .expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    assert!(!sections.is_empty());
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("pattern db version test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+    let audit_dir = tmp.join("audit-bundle");
+
+    run_apply_addendum(&spec_pdf, &manifest, None, Some(&audit_dir), true);
+
+    let report_path = audit_dir.join("change-report.json");
+    assert!(
+        report_path.exists(),
+        "change-report.json must be written to --audit-bundle directory"
+    );
+
+    let report_text = std::fs::read_to_string(&report_path).expect("read change-report.json");
+    let report: serde_json::Value =
+        serde_json::from_str(&report_text).expect("change-report.json must be valid JSON");
+
+    let version = report["pattern_db_version"]
+        .as_str()
+        .expect("pattern_db_version must be a string in change-report.json");
+
+    assert!(
+        !version.is_empty(),
+        "pattern_db_version must be non-empty"
+    );
+    // The embedded default.json version is "1.0.0".
+    assert_eq!(version, "1.0.0", "pattern_db_version must match default.json");
+}
+
 // ── Sprint 8.2 — Stage 0 intake triage tests ─────────────────────────────────
 
 /// Run `backend-cli intake --input <pdf> [--output <json>] [--dry-run]`.
@@ -2323,4 +2514,125 @@ fn apply_addendum_dry_run_is_deterministic() {
         );
     }
 }
+
+// ── Test: benchmark apply-addendum on full 571-page spec ──────────────────────
+
+/// Benchmark: dry-run apply-addendum on the full 571-page SPEC fixture with 3
+/// real sections.  Asserts total elapsed < 10,000 ms.
+///
+/// Reads stage-level timing from `diagnostics.jsonl` in the audit bundle:
+/// - Extraction elapsed_ms (ExtractionDiagnostic)
+/// - Segmentation elapsed_ms (SegmentationDiagnostic)
+/// - Per-section stitch elapsed_ms (StitchDiagnostic, 0 on dry-run)
+///
+/// Baseline recorded in `audit_output/phase-h-perf/`.
+///
+/// Requires the backend-cli binary and access to the Tier 1 corpus.
+/// Skipped in normal CI via `#[ignore]`.
+#[test]
+#[ignore]
+fn apply_addendum_benchmark_large_spec() {
+    let tmp = tmp_dir("benchmark-large-spec");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC corpus fixture missing — cannot benchmark");
+
+    // Segment to discover real section IDs.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    assert!(sections.len() >= 3, "fixture must have at least 3 sections");
+
+    // Pick 3 sections spread across the document (first, middle, last).
+    let first = sections[0]["section_id"].as_str().unwrap().to_owned();
+    let mid = sections[sections.len() / 2]["section_id"].as_str().unwrap().to_owned();
+    let last = sections[sections.len() - 1]["section_id"].as_str().unwrap().to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("benchmark 3-section dry-run"),
+        &[
+            (&first, serde_json::json!([])),
+            (&mid,   serde_json::json!([])),
+            (&last,  serde_json::json!([])),
+        ],
+    );
+
+    let bundle_dir = tmp.join("audit-bundle");
+    std::fs::create_dir_all(&bundle_dir).unwrap();
+
+    let wall_start = std::time::Instant::now();
+    let response = run_apply_addendum(&spec_pdf, &manifest, None, Some(&bundle_dir), true);
+    let wall_elapsed_ms = wall_start.elapsed().as_millis() as u64;
+
+    assert_eq!(
+        response["result"]["status"], "succeeded",
+        "benchmark dry-run must succeed: {:?}", response["result"]["summary"]
+    );
+
+    // Parse diagnostics.jsonl for stage timings.
+    let diag_path = bundle_dir.join("diagnostics.jsonl");
+    assert!(diag_path.exists(), "diagnostics.jsonl must be written to audit bundle");
+
+    let diag_text = std::fs::read_to_string(&diag_path).expect("read diagnostics.jsonl");
+    let events: Vec<serde_json::Value> = diag_text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+
+    let extract_ms = events.iter()
+        .find(|e| e["stage"].as_str() == Some("extraction"))
+        .and_then(|e| e["elapsed_ms"].as_u64())
+        .unwrap_or(0);
+
+    let segment_ms = events.iter()
+        .find(|e| e["stage"].as_str() == Some("segmentation"))
+        .and_then(|e| e["elapsed_ms"].as_u64())
+        .unwrap_or(0);
+
+    let stitch_ms_total: u64 = events.iter()
+        .filter(|e| e["stage"].as_str() == Some("stitch"))
+        .filter_map(|e| e["elapsed_ms"].as_u64())
+        .sum();
+
+    println!(
+        "\n[benchmark] wall={wall_elapsed_ms}ms  \
+         extract={extract_ms}ms  segment={segment_ms}ms  stitch_total={stitch_ms_total}ms"
+    );
+
+    // Write baseline record to audit_output/phase-h-perf/.
+    let perf_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent().unwrap()
+        .parent().unwrap()
+        .join("audit_output/phase-h-perf");
+    std::fs::create_dir_all(&perf_dir).ok();
+
+    let record = serde_json::json!({
+        "date": chrono::Utc::now().to_rfc3339(),
+        "fixture": "SPEC_RWB_LHHS_ALL_ORG.pdf",
+        "sections_patched": 3,
+        "dry_run": true,
+        "wall_elapsed_ms": wall_elapsed_ms,
+        "extract_elapsed_ms": extract_ms,
+        "segment_elapsed_ms": segment_ms,
+        "stitch_elapsed_ms_total": stitch_ms_total,
+        "threshold_ms": 10_000u64,
+        "passed": wall_elapsed_ms < 10_000,
+    });
+    let record_path = perf_dir.join("benchmark-large-spec.json");
+    std::fs::write(&record_path, serde_json::to_string_pretty(&record).unwrap() + "\n").ok();
+    println!("[benchmark] record written to {}", record_path.display());
+
+    assert!(
+        wall_elapsed_ms < 10_000,
+        "3-section dry-run took {wall_elapsed_ms}ms, must be < 10,000ms. \
+         See audit_output/phase-h-perf/ for stage breakdown."
+    );
+}
+
 

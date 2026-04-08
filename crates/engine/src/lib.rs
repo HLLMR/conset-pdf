@@ -23,6 +23,7 @@ pub mod error;
 pub mod extractor;
 pub mod intake;
 pub mod parse;
+pub mod patterns;
 pub mod pipeline;
 pub mod processor;
 pub mod render;

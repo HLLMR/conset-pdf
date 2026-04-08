@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.8.0  
-**Date:** April 7, 2026  
+**Version:** 4.9.0  
+**Date:** April 8, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -39,6 +39,7 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 6. [Standards Integration](#standards-integration)
 7. [Quality Enforcement](#quality-enforcement)
 8. [Extension Points](#extension-points)
+9. [Known Design Constraints](#known-design-constraints)
 
 ---
 
@@ -1176,6 +1177,30 @@ These integration outcomes are canonical architectural constraints derived from 
 
 ---
 
+## Known Design Constraints
+
+### Constraint 1 — Full-Document Extraction per Operation
+
+**Description:** `SpecsPatchOrchestrator::run()` calls `Extractor::extract()` on the entire source PDF for every `apply-addendum` invocation, regardless of how many sections are being patched.
+
+**Affected call site:** `crates/engine/src/specs_patch.rs` — `Extractor::new().extract(&manifest.source_path)?`
+
+**Cost model:** O(n\_pages) — all pages in the document are extracted and materialized into a `LayoutTranscript` in memory before any section is parsed or edited. For the Tier 1 corpus flagship (571-page, 89-section spec book), a 3-section dry-run patch still extracts all 571 pages. The `LayoutTranscript` is a `Vec<Page>` where each `Page` holds all text spans on that page; peak memory and extraction time both scale linearly with total document span count.
+
+**Why it exists:** The segmentation stage (`segment_transcript()`) detects section boundaries via footer pattern matching across the entire page sequence. The stitcher needs the complete `SegmentIndex` — not just the target sections — to validate that non-target page objects are unmodified (unchanged-page content-hash assertion). A single full extraction is simpler and safer than a two-pass approach where the second pass might miss boundary pages.
+
+**Acceptable trade-off for current use cases:** Single-run spec-book patching (1–89 sections) on documents up to ~600 pages completes in under 10 seconds in dry-run mode on developer hardware. The extraction stage is the dominant cost, but it is bounded by the observed corpus fixture size range.
+
+**Phase 9+ mitigation path:** Drawing-sheet batch processing will involve many large (500–3,000 page) drawing sets processed in a loop. A range-bounded extraction API — `Extractor::extract_range(path, start_page..=end_page)` — would materialize only the pages required for the target section range, reducing extraction cost from O(n\_total\_pages) to O(n\_section\_pages) per call. The segmentation stage would require a separate lightweight footer-scan pass that does not materialize full `LayoutTranscript` nodes. **This optimization must be designed and evaluated before any Phase 9 batch worker begins processing drawing sets at scale.** An O(n\_pages) extraction loop in a batch job would produce an O(n\_docs × n\_pages) total extraction cost where O(n\_docs × n\_section\_pages) is achievable.
+
+**Action required before Phase 9 batch architecture is locked:**
+1. Profile extraction time vs. page count on the largest drawing-set Tier 1 fixtures.
+2. Decide: is range-bounded extraction required for Phase 9, or is full extraction acceptable given drawing-set page distribution and expected concurrency?
+3. If range-bounded extraction is required: design the `extract_range` interface in `crates/engine/src/extractor.rs` and register it as a Phase 9 prerequisite task in the plan.
+4. Record the decision and any resulting new constraint in this section.
+
+---
+
 ## Revision History
 
 | Version | Date | Changes |
@@ -1188,13 +1213,14 @@ These integration outcomes are canonical architectural constraints derived from 
 | 4.2.4 | 2026-03-23 | Added vector-first deterministic adaptive architecture constraints: frame/corner title-block localization, deterministic field scoring, auto-learned firm templates with drift checks, spec heading detection rules, and explicit-opt-in bounded AI fallback policy. |
 | 4.2.5 | 2026-03-23 | Added local micro-ML assist, power-user LLM validation/instruction API constraints, raster OCR routing in Stage 0, and contract-first schedule extraction/export architecture (JSON/CSV/XML). |
 | 4.2.6 | 2026-03-23 | Added architecture constraints for replayable corrections and instruction DSL, provenance-first operational review, privacy/redaction controls, batch queueing/resume, standards normalization on existing canonical scaffold, cross-document entity resolution, and project knowledge indexing. |
+| 4.9.0 | 2026-04-08 | Added Known Design Constraints section: Constraint 1 — full-document extraction per operation (O(n\_pages) cost model, Phase 9 mitigation path for range-bounded extraction). Added Sprint 8.4 benchmark baseline. |
 
 ---
 
 **Status:** ✅ ACTIVE  
 **Owner:** HLLMR LLC  
-**Last Updated:** March 23, 2026  
-**Version:** 4.2.6
+**Last Updated:** April 8, 2026  
+**Version:** 4.9.0
 
 ---
 
