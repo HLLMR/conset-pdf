@@ -647,6 +647,7 @@ dependencies = [
  "conset-pdf-contracts",
  "conset-pdf-extraction",
  "conset-pdf-ir",
+ "conset-pdf-standards-data",
  "env_logger",
  "log",
  "lopdf",

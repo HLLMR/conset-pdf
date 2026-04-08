@@ -373,3 +373,106 @@ Common per-section failure causes:
 | Extract | `extraction failed for '…'` | Source PDF is corrupt, encrypted, or a pure raster scan. |
 | Segment | `segmentation failed` | Transcript is empty or internal inconsistency — re-run `extract`. |
 | Parse | `no sections found matching filter '…'` | `--section` value does not match any segment ID; omit `--section` to parse all sections and inspect the IDs with `segment`. |
+
+---
+
+## Drawing subcommands (Phase 9)
+
+The following subcommands are specific to AEC drawing-set PDFs.
+
+### `index-drawing`
+
+Build a `DrawingIndex` JSON from a `LayoutTranscript` produced by `extract`.
+
+```
+backend-cli index-drawing --input <TRANSCRIPT_JSON> --output <INDEX_JSON> [--dry-run]
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `--input <JSON>` | yes | Path to a `LayoutTranscript` JSON (produced by `extract`). |
+| `--output <JSON>` | yes | Path for the output `DrawingIndex` JSON. |
+| `--dry-run` | no | Validate arguments only; skip indexing. |
+
+**Output:** `DrawingIndex` JSON at `--output`.  `result.summary` reports `Indexed N sheet(s) from P pages`.
+
+### `apply-sheet-addendum`
+
+Replace sheets in a drawing-set PDF according to a `DrawingAddendumManifest`.
+
+```
+backend-cli apply-sheet-addendum --manifest <MANIFEST_JSON> [--output <PATCH_RESULT_JSON>] [--audit-bundle <DIR>] [--dry-run]
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `--manifest <JSON>` | yes | Path to a `DrawingAddendumManifest` JSON. |
+| `--output <JSON>` | no | Path to write the `DrawingPatchResult` JSON summary (per-sheet outcomes). |
+| `--audit-bundle <DIR>` | no | Directory for `change-report.json` and `metrics.json`. |
+| `--dry-run` | no | Validate sheet ID matching only; do not write any PDF. |
+
+**Output:** Stitched PDF at the path specified by `DrawingAddendumManifest.output_path`. `DrawingPatchResult` JSON written to `--output` when provided.
+
+### `extract-schedules`
+
+Extract schedule tables from a drawing-set PDF transcript.
+
+```
+backend-cli extract-schedules --input <TRANSCRIPT_JSON> --output <SCHEDULES_JSON> [--format json] [--dry-run]
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `--input <JSON>` | yes | Path to a `LayoutTranscript` JSON (produced by `extract`). |
+| `--output <JSON>` | no | Path for the output schedules JSON. |
+| `--format <FMT>` | no | Output format: `json` (default). |
+| `--dry-run` | no | Validate arguments only; skip extraction. |
+
+**Output:** JSON file at `--output` with schema:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "sheet_count": 59,
+  "schedule_sheet_count": 3,
+  "table_count": 2,
+  "tables": [
+    {
+      "sheet_id": "M-201",
+      "sheet_title": "MECHANICAL EQUIPMENT SCHEDULE",
+      "table_title": null,
+      "headers": ["TAG", "DESCRIPTION", "CFM", "KW"],
+      "rows": [["AHU-1", "Air Handler Unit", "2400", "15.0"]],
+      "row_count": 1,
+      "confidence": 1.0
+    }
+  ]
+}
+```
+
+---
+
+### `index-drawing` error codes
+
+| Code | Meaning | Most likely cause | What to check |
+|---|---|---|---|
+| `MISSING_OUTPUT_PATH` | `--output` was not provided. | CLI invocation is missing the flag. | Add `--output <JSON>` to the command. |
+| `INVALID_TRANSCRIPT` | Cannot read or parse the transcript JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `extract`. |
+
+### `apply-sheet-addendum` error codes
+
+| Code | Meaning | Most likely cause | What to check |
+|---|---|---|---|
+| `MISSING_MANIFEST_PATH` | `--manifest` was not provided. | CLI invocation is missing the flag. | Add `--manifest <JSON>` to the command. |
+| `MANIFEST_READ_ERROR` | Cannot read or parse the manifest JSON. | File not found, not readable, or has invalid JSON syntax. | Check the file path and run `jq . manifest.json`. |
+| `EMPTY_MANIFEST` | `sheets` array in manifest is empty. | Manifest was created without sheet entries. | Add at least one entry to the `"sheets"` array. |
+| `AUDIT_DIR_CREATE_ERROR` | Cannot create the `--audit-bundle` directory. | Insufficient permissions or invalid path. | Check the path and parent directory permissions. |
+| `ORCHESTRATOR_ERROR` | Extraction or sheet-detection failed. | Source PDF is corrupt, encrypted, or scanned. | Verify the PDF opens in a viewer; check `result.summary`. |
+
+### `extract-schedules` error codes
+
+| Code | Meaning | Most likely cause | What to check |
+|---|---|---|---|
+| `INVALID_TRANSCRIPT` | Cannot read or parse the transcript JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `extract`. |
+| `SERIALISE_ERROR` | Internal error serialising the table output. | Memory or encoding issue (extremely rare). | File a bug with `result.summary` and the input PDF. |
+

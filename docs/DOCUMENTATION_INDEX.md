@@ -1,8 +1,8 @@
 # Conset PDF Documentation Index
 
 **Repository**: conset-pdf  
-**Version**: 2.5.0  
-**Last Updated**: April 7, 2026  
+**Version**: 2.6.0  
+**Last Updated**: April 11, 2026  
 **Status**: Active canonical index  
 **Doc Status Tag:** Implemented
 
@@ -58,6 +58,16 @@ Current-state library:
 - `docs/current-state/risk-register.md`
 - `docs/current-state/decision-log.md`
 - `docs/current-state/gap-register.md`
+
+User workflow guides and CLI reference:
+
+- `docs/CLI_REFERENCE.md` — Full CLI reference for all `backend-cli` subcommands (Phase 8.7 + Phase 9 drawing sections: `index-drawing`, `apply-sheet-addendum`, `extract-schedules`)
+- `docs/WORKFLOW_APPLYADDENDUM.md` — End-to-end spec-book addendum workflow tutorial (`apply-addendum`, Phase 8.7)
+- `docs/WORKFLOW_APPLYSHEETADDENDUM.md` — End-to-end drawing sheet addendum workflow tutorial (`apply-sheet-addendum`, Sprint 9.5.C)
+
+Phase plans:
+
+- `docs/plans/Phase_9_Plan.md` — Phase 9 Drawing Sheet Management: sprint structure, DoD table, delivered capabilities; all Sprints 9.0–9.5 complete with one known open gap (DoD row 8)
 
 ---
 

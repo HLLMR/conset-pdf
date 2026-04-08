@@ -108,6 +108,12 @@ pub enum WorkflowOperation {
     VisualizeAst,
     /// Stage 0 intake triage: rotation normalization and per-page audit.
     Intake,
+    /// Build a `DrawingIndex` JSON from a drawing-set PDF transcript.
+    IndexDrawing,
+    /// Apply a drawing addendum manifest: replace sheets in a drawing-set PDF.
+    ApplySheetAddendum,
+    /// Extract schedule tables from a drawing-set PDF.
+    ExtractSchedules,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

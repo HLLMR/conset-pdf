@@ -7,8 +7,11 @@
 //! translated to and from the engine's `LayoutTranscript`-typed API.
 
 pub mod apply_addendum;
+pub mod apply_sheet_addendum;
 pub mod edit;
 pub mod extract;
+pub mod extract_schedules;
+pub mod index_drawing;
 pub mod intake;
 pub mod parse;
 pub mod regenerate;
@@ -37,6 +40,9 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::VisualizeSegments => visualize_segments::run(req, bundle),
         WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),
         WorkflowOperation::Intake => intake::run(req, bundle),
+        WorkflowOperation::IndexDrawing => index_drawing::run(req, bundle),
+        WorkflowOperation::ApplySheetAddendum => apply_sheet_addendum::run(req, bundle),
+        WorkflowOperation::ExtractSchedules => extract_schedules::run(req, bundle),
         _ => not_implemented(req, bundle),
     }
 }

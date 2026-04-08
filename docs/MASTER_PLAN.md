@@ -902,7 +902,7 @@ Phase 7: End-to-End (Week 14) ← COMPLETE
     ↓
 Phase 8: Production Hardening (Weeks 15-16) ← ✅ ALL SPRINTS COMPLETE (8.0–8.7)
     ↓
-Phase 9: Drawing Sheets (Weeks 17-18)
+Phase 9: Drawing Sheets (Weeks 17-18) ← ✅ ALL SPRINTS COMPLETE (9.0–9.5)
     ↓
 Phase 10: Submittals (Weeks 19-20) ← BETA COMPLETE
     ↓
@@ -1415,25 +1415,28 @@ cargo run -- apply-addendum \
 
 ---
 
-### Phase 9 — Drawing Sheet Management (Weeks 17-18)
+### Phase 9 — Drawing Sheet Management (Weeks 17-18) ← ✅ ALL SPRINTS COMPLETE (9.0–9.5)
 
 **Goal:** Automated sheet replacement in drawing sets.
 
+**Plan:** `docs/plans/Phase_9_Plan.md` — all sprints complete.
+
 **Deliverables:**
-- ☐ Sheet ID extraction (title blocks + footers)
-- ☐ Sheet matching (by ID)
-- ☐ PDF merge/replace logic
-- ☐ Sheet renaming detection
-- ☐ Bookmark generation
-- ☐ Schedule extraction (basic tables)
+- ✅ Sheet ID extraction (title blocks + footers) — Sprint 9.1
+- ✅ Sheet matching (by ID) — Sprint 9.2
+- ✅ PDF merge/replace logic — Sprint 9.2
+- ✅ Sheet renaming detection — Sprint 9.3
+- ✅ Bookmark generation — Sprint 9.3
+- ✅ Schedule extraction (basic tables) — Sprint 9.4
+- ✅ DWG corpus validation baseline + drawing docs + determinism test — Sprint 9.5
 
 **Definition of Done:**
-- Sheet replacement works on real addenda
-- Sheet IDs correctly extracted
-- Sheet renaming tracked and reported
-- Bookmarks generated accurately
-- Audit trail shows which sheets replaced/renamed
-- Ready for customer testing
+- ✅ Sheet replacement works on real addenda
+- ✅ Sheet IDs correctly extracted
+- ✅ Sheet renaming tracked and reported
+- ✅ Bookmarks generated accurately
+- ✅ Audit trail shows which sheets replaced/renamed
+- ✅ Ready for customer testing
 
 ---
 

@@ -18,6 +18,9 @@
 //! let result = extractor.extract("document.pdf")?;
 //! ```
 
+pub mod drawing_segment;
+pub mod drawing_tables;
+pub mod drawings_patch;
 pub mod edit;
 pub mod error;
 pub mod extractor;
@@ -33,6 +36,9 @@ pub mod stitch;
 pub mod visualize;
 pub mod visualize_ast;
 
+pub use drawing_segment::DrawingSegmentEngine;
+pub use drawing_tables::{extract_tables_from_sheet, ExtractedTable};
+pub use drawings_patch::DrawingsPatchOrchestrator;
 pub use edit::SectionEditor;
 pub use error::EngineError;
 pub use extractor::Extractor;

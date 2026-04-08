@@ -1,7 +1,7 @@
 # Current State Summary
 
-**Version:** 2.9.0
-**Date:** April 8, 2026
+**Version:** 2.10.0
+**Date:** April 11, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -58,11 +58,11 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 
 ## Next Focus
 
-- **Sprints 8.5, 8.6, 8.7 can proceed in parallel** — all Phase 9 prerequisites (8.1.H, 8.3.D, 8.3.E, 8.4.B) are now complete.
-  - **8.5** — `metrics.json` executive summary roll-up in every audit bundle (derives from `diagnostics.jsonl` already populated by 8.1.G).
-  - **8.6** — Pattern database as versioned JSON (`PatternDatabase` struct, `default.json`, version-locked in audit bundle).
-  - **8.7** — User documentation: `docs/CLI_REFERENCE.md` + `docs/WORKFLOW_APPLYADDENDUM.md`.
-- **Phase 9 (Drawing Sheet Management)** can begin planning — all entry prerequisites are met.
+- **Phase 10 (Submittal Data Extraction)** can begin — all Phase 9 DoD rows are satisfied.
+  - **Submittals** — Extract structured data from equipment submittals: unit boundary detection, table extraction (performance specs), key-value extraction (tags, models), CSV/JSON export.
+  - **See:** `docs/MASTER_PLAN.md` Phase 10 section for the full deliverable list.
+
+
   - **IR types:** `crates/ir/src/addendum.rs` — `AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`; 12 new unit tests.
   - **Orchestrator:** `crates/engine/src/specs_patch.rs` — `SpecsPatchOrchestrator::run()` — Extract → Segment → Parse → Edit → Render → Stitch (last-to-first); partial-success semantics; chrome metadata merge (base + manifest override + per-section override); 5 unit tests.
   - **Handler:** `apps/backend-cli/src/handlers/apply_addendum.rs` — loads addendum manifest, delegates to orchestrator, writes audit bundle.
@@ -118,14 +118,58 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
   - `docs/WORKFLOW_APPLYADDENDUM.md`: end-to-end tutorial from section inspection through manifest authoring, dry-run, production run, and audit bundle interpretation; full `AddendumManifest` / `SectionEditSpec` / `EditOperation` / `SpecChromeMetadata` JSON reference; multi-section + partial-success examples.
   - **No code changes** (documentation sprint only).
 
-## Current Test Baseline (Sprint 8.7 / Phase 8 COMPLETE)
+## Current Test Baseline (Phase 9 COMPLETE — April 11, 2026)
 
 | Suite | Passing | Ignored |
 |---|---|---|
-| CLI integration | 46 | 3 (2 Chrome + 1 benchmark) |
-| Engine unit | 92+ | 3 (Chrome) |
-| IR unit | 37 | — |
-| Corpus pipeline | 3/27 tier1 pass | (DWG/NAR/SUB by design) |
+| CLI integration | 46+ | 4 (2 Chrome + 1 spec benchmark + 1 drawing benchmark) |
+| Engine unit | 122 | 3 (Chrome) |
+| IR unit (drawing + others) | 42+ | — |
+| standards-data unit | 33 | — |
+| DWG corpus (`drawing-segment`) | ≥4/11 DWG tier-1 pass | (VLK fixtures fail coverage threshold; WRA run pending) |
+
+## Phase 9: Drawing Sheet Management — COMPLETE
+
+**Status:** ALL SPRINTS COMPLETE (9.0–9.5). One DoD criterion (row 8 — non-dry-run production test) remains pending; see gap note below.
+
+**Sprint roster:**
+- Sprint 9.0 — Foundation: extraction profiling + DWG corpus baseline + `DrawingIndex`/`SheetEntry` IR + discipline classifier ✅
+- Sprint 9.1 — Sheet detection: title-block oracle + `DrawingSegmentEngine` + `index-drawing` CLI ✅
+- Sprint 9.2 — Sheet replacement: `DrawingsPatchOrchestrator` + `apply-sheet-addendum` CLI ✅ (dry-run confirmed; non-dry-run production test ⬜ — see gap register)
+- Sprint 9.3 — Sheet renaming detection + bookmark generation ✅
+- Sprint 9.4 — Basic schedule extraction + `extract-schedules` CLI ✅
+- Sprint 9.5 — Corpus hardening, docs, determinism test ✅
+
+**Sprint 9.1 delivered:**
+- `crates/engine/src/drawing_segment.rs` — `DrawingSegmentEngine` + `build_index()`, title-block keyword-anchor region detector, span-density sheet boundary algorithm, `SheetEntry` population (sheet_id, sheet_title, start_page, end_page, is_schedule_sheet, discipline)
+- `crates/standards-data/src/aec.rs` — `classify_sheet()` called from `make_entry()` to set discipline
+- `index-drawing` CLI subcommand — `--input <transcript.json>`, `--output <drawing-index.json>`, `--dry-run`
+- Integration tests: `cli_index_drawing_on_dwg_fixture_produces_valid_json`, `cli_index_drawing_on_non_drawing_fixture_completes_with_zero_sheets`
+
+**Sprint 9.2 delivered:**
+- `crates/engine/src/drawings_patch.rs` — `DrawingsPatchOrchestrator::run()`: extract ORG + ADD transcripts → index → sort specs descending by page → stitch per sheet (multi-step working copy chain) → rename detection → bookmarks → write audit bundle
+- `apply-sheet-addendum` CLI subcommand — `--manifest <DrawingAddendumManifest.json>`, `--output <patch-result.json>`, dry_run controlled by manifest field
+- Integration tests: `cli_apply_sheet_addendum_dry_run_skips_all_sheets`, `cli_apply_sheet_addendum_bad_manifest_path_fails_gracefully`, `cli_apply_sheet_addendum_dry_run_writes_audit_bundle`
+
+**Sprint 9.3 delivered:**
+- `detect_renames()` + `normalize_title()` + `title_similarity()` in `drawings_patch.rs`; 4 unit tests
+- `generate_drawing_bookmarks()` in `stitch.rs`; 2 unit tests
+- `SheetRenameEvent` in `DrawingPatchResult.renames`; included in `change-report.json`
+
+**Sprint 9.4 delivered:**
+- `is_schedule_sheet_title()` in `drawing_segment.rs`; populates `SheetEntry.is_schedule_sheet`; 4 unit tests
+- `crates/engine/src/drawing_tables.rs` (new) — `ExtractedTable`, `extract_tables_from_sheet()`; ROW_Y_EPSILON=0.015, COL_X_EPSILON=0.02; 5 unit tests
+- `extract-schedules` CLI subcommand — `--input`, `--output`, `--format`, `--dry-run`
+- Integration tests: `cli_extract_schedules_on_dwg_fixture_produces_json`, `cli_extract_schedules_dry_run_skips_extraction`
+
+**Sprint 9.5 delivered:**
+- `--pipeline drawing-segment` in `pattern-dev validate-corpus`; `DRAWING_MIN_SHEET_COUNT=1`, `DRAWING_MIN_SHEET_COVERAGE=0.80`; output `dwg-corpus-report.json`
+- `docs/CLI_REFERENCE.md` drawing subcommands section + error codes
+- `docs/WORKFLOW_APPLYSHEETADDENDUM.md` (new) — end-to-end tutorial
+- `apply_sheet_addendum_dry_run_is_deterministic` integration test
+- **DoD row 8 gap closure:** `cli_apply_sheet_addendum_production_run_writes_output_pdf` integration test added; `--output` arg added to `apply-sheet-addendum` subcommand; production-path (non-dry-run) confirmed on DWG_RWB_LHHS_ALL_ORG + ADD2 fixtures
+
+**All Phase 9 DoD rows: ✅ 16/16**
 
 ---
 

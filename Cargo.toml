@@ -47,3 +47,4 @@ conset-pdf-extraction = { path = "crates/pdf-extraction" }
 conset-pdf-contracts = { path = "crates/contracts" }
 conset-pdf-workflows = { path = "crates/workflows" }
 conset-pdf-engine = { path = "crates/engine" }
+conset-pdf-standards-data = { path = "crates/standards-data" }

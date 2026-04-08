@@ -1214,13 +1214,14 @@ These integration outcomes are canonical architectural constraints derived from 
 | 4.2.5 | 2026-03-23 | Added local micro-ML assist, power-user LLM validation/instruction API constraints, raster OCR routing in Stage 0, and contract-first schedule extraction/export architecture (JSON/CSV/XML). |
 | 4.2.6 | 2026-03-23 | Added architecture constraints for replayable corrections and instruction DSL, provenance-first operational review, privacy/redaction controls, batch queueing/resume, standards normalization on existing canonical scaffold, cross-document entity resolution, and project knowledge indexing. |
 | 4.9.0 | 2026-04-08 | Added Known Design Constraints section: Constraint 1 — full-document extraction per operation (O(n\_pages) cost model, Phase 9 mitigation path for range-bounded extraction). Added Sprint 8.4 benchmark baseline. |
+| 5.0.0 | 2026-04-11 | Phase 9 Drawing Sheet Management complete. `DrawingSegmentEngine` (keyword-anchor span-density sheet detection, `build_index()`, `SheetEntry` IR); `DrawingsPatchOrchestrator` (multi-step stitch chain with rename detection, bookmark generation, dry-run + production modes); `apply-sheet-addendum`, `index-drawing`, `extract-schedules` CLI subcommands; `extract_tables_from_sheet()` schedule extraction; DWG corpus validation pass (drawing-segment pipeline); `WORKFLOW_APPLYSHEETADDENDUM.md` user guide. DoD row 8 (production-path integration test) deferred — see `docs/plans/Phase_9_Plan.md`. |
 
 ---
 
 **Status:** ✅ ACTIVE  
 **Owner:** HLLMR LLC  
-**Last Updated:** April 8, 2026  
-**Version:** 4.9.0
+**Last Updated:** April 11, 2026  
+**Version:** 5.0.0
 
 ---
 

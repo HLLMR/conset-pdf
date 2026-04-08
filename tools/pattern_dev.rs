@@ -32,6 +32,7 @@ use conset_pdf_engine::{
     extractor::Extractor,
     parse::parse_section_with_stats,
     segment::segment_transcript,
+    DrawingSegmentEngine,
 };
 use conset_pdf_ir::{AstNode, OutlineTag};
 use image::{Rgba, RgbaImage};
@@ -1088,6 +1089,13 @@ const CORPUS_MAX_UNCLASSIFIED: f64 = 0.01;
 /// Minimum number of CSI sections a fixture must contain to pass.
 const CORPUS_MIN_SECTION_COUNT: usize = 1;
 
+/// Minimum number of sheets that must be detected in a DWG fixture to pass.
+const DRAWING_MIN_SHEET_COUNT: usize = 1;
+
+/// Minimum fraction of pages that must belong to a detected sheet.
+/// (sheets_with_id_pages / total_pages)
+const DRAWING_MIN_SHEET_COVERAGE: f64 = 0.80;
+
 /// Stable FNV-1a 64-bit content fingerprint.
 ///
 /// Used for determinism checking between validate-corpus runs: if the same sidecar
@@ -1639,7 +1647,10 @@ fn run_validate_corpus_pipeline(
 ) -> Result<()> {
     match pipeline_stage {
         "segment" | "parse" => {}
-        other => bail!("--pipeline must be 'segment' or 'parse', got: '{other}'"),
+        "drawing-segment" => {
+            return run_validate_corpus_drawing(tiers, corpus_dir, output_dir, dry_run);
+        }
+        other => bail!("--pipeline must be 'segment', 'parse', or 'drawing-segment', got: '{other}'"),
     }
 
     for &tier in tiers {
@@ -1875,7 +1886,221 @@ fn run_validate_corpus_pipeline(
     Ok(())
 }
 
-// ── Phase J: unit tests ───────────────────────────────────────────────────────
+// ── drawing-segment corpus validation (9.5.A) ─────────────────────────────────
+
+/// Batch-run `DrawingSegmentEngine::build_index()` against all fixtures in the
+/// requested tiers and emit a `corpus-report.json` to the output directory.
+///
+/// Pass/fail thresholds:
+/// - `DRAWING_MIN_SHEET_COUNT` (1) — minimum sheets detected
+/// - `DRAWING_MIN_SHEET_COVERAGE` (0.80) — fraction of pages belonging to a sheet
+// #[allow(clippy::disallowed_methods)] — serde_json::json! uses .unwrap() internally.
+#[allow(clippy::disallowed_methods)]
+fn run_validate_corpus_drawing(
+    tiers: &[u8],
+    corpus_dir: &Path,
+    output_dir: &Path,
+    dry_run: bool,
+) -> Result<()> {
+    for &tier in tiers {
+        if tier == 0 || tier > 2 {
+            bail!(
+                "Only --tier 1 and --tier 2 are permitted. \
+                 Tier 3 and holdout are prohibited by corpus policy."
+            );
+        }
+    }
+    if tiers.is_empty() {
+        bail!("Specify at least one --tier (1 or 2).");
+    }
+
+    let mut fixtures: Vec<(u8, PathBuf)> = Vec::new();
+    for &tier in tiers {
+        let tier_dir = corpus_dir.join(format!("tier{tier}"));
+        if !tier_dir.exists() {
+            eprintln!("WARNING: tier directory not found, skipping: {}", tier_dir.display());
+            continue;
+        }
+        for entry in std::fs::read_dir(&tier_dir)
+            .with_context(|| format!("Failed to read tier dir: {}", tier_dir.display()))?
+            .flatten()
+        {
+            let p = entry.path();
+            if p.extension().and_then(|e| e.to_str()) == Some("pdf") {
+                fixtures.push((tier, p));
+            }
+        }
+    }
+    fixtures.sort_by(|a, b| a.1.cmp(&b.1));
+
+    if dry_run {
+        println!(
+            "[dry-run] validate-corpus --pipeline drawing-segment: tiers={tiers:?} \
+             fixtures={} corpus_dir={} output_dir={}",
+            fixtures.len(),
+            corpus_dir.display(),
+            output_dir.display()
+        );
+        for (tier, f) in &fixtures {
+            println!("  [dry-run] tier{tier}  {}", f.display());
+        }
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(output_dir)
+        .with_context(|| format!("Failed to create output dir: {}", output_dir.display()))?;
+
+    let generated_at = Utc::now().to_rfc3339();
+    let extractor = Extractor::new();
+
+    let mut fixture_records: Vec<serde_json::Value> = Vec::new();
+    let mut total_passed = 0u32;
+    let mut total_failed = 0u32;
+    let mut total_errored = 0u32;
+
+    for (fixture_num, (tier, fixture_path)) in fixtures.iter().enumerate() {
+        let stem = fixture_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        println!(
+            "\n[{}/{}] tier{}  {}",
+            fixture_num + 1,
+            fixtures.len(),
+            tier,
+            stem
+        );
+
+        let path_str = match fixture_path.to_str() {
+            Some(s) => s,
+            None => {
+                eprintln!("  ERROR: non-UTF-8 path — skipping");
+                total_errored += 1;
+                continue;
+            }
+        };
+
+        // ── Extract ──────────────────────────────────────────────────────────
+        let transcript = match extractor.extract(path_str) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  ERROR: extraction failed — {e}");
+                total_errored += 1;
+                fixture_records.push(serde_json::json!({
+                    "stem": stem,
+                    "tier": tier,
+                    "pdf_path": path_str,
+                    "pass": false,
+                    "error": e.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        let total_pages = transcript.pages().len();
+
+        // ── Drawing segment ───────────────────────────────────────────────────
+        let drawing_index = DrawingSegmentEngine::build_index(&transcript);
+        let sheet_count = drawing_index.sheet_count;
+
+        // Sheet coverage: count pages that belong to at least one detected sheet.
+        let covered_pages: usize = drawing_index
+            .sheets
+            .iter()
+            .map(|s| s.page_count)
+            .sum();
+        let sheet_coverage = if total_pages == 0 {
+            0.0f64
+        } else {
+            covered_pages as f64 / total_pages as f64
+        };
+
+        let mut issues: Vec<String> = Vec::new();
+        if sheet_count < DRAWING_MIN_SHEET_COUNT {
+            issues.push(format!(
+                "sheet_count {sheet_count} < min {DRAWING_MIN_SHEET_COUNT}"
+            ));
+        }
+        if sheet_coverage < DRAWING_MIN_SHEET_COVERAGE {
+            issues.push(format!(
+                "sheet_coverage {sheet_coverage:.4} < min {DRAWING_MIN_SHEET_COVERAGE}"
+            ));
+        }
+
+        let pass = issues.is_empty();
+        if pass {
+            total_passed += 1;
+        } else {
+            total_failed += 1;
+            for issue in &issues {
+                eprintln!("  FAIL: {issue}");
+            }
+        }
+
+        println!(
+            "  sheets={sheet_count}  coverage={sheet_coverage:.3}  \
+             total_pages={total_pages}  issues={}",
+            issues.len()
+        );
+
+        fixture_records.push(serde_json::json!({
+            "stem": stem,
+            "tier": tier,
+            "pdf_path": path_str,
+            "pass": pass,
+            "sheet_count": sheet_count,
+            "total_pages": total_pages,
+            "covered_pages": covered_pages,
+            "sheet_coverage": sheet_coverage,
+            "issues": issues,
+        }));
+    }
+
+    let total = total_passed + total_failed + total_errored;
+    let pass_rate = if total == 0 {
+        1.0f64
+    } else {
+        f64::from(total_passed) / f64::from(total)
+    };
+
+    let report = serde_json::json!({
+        "schema_version": "0.1.0",
+        "generated_at": generated_at,
+        "pipeline": "drawing-segment",
+        "thresholds": {
+            "min_sheet_count": DRAWING_MIN_SHEET_COUNT,
+            "min_sheet_coverage": DRAWING_MIN_SHEET_COVERAGE,
+        },
+        "aggregate": {
+            "total": total,
+            "passed": total_passed,
+            "failed": total_failed,
+            "errored": total_errored,
+            "pass_rate": pass_rate,
+        },
+        "fixtures": fixture_records,
+    });
+
+    let report_path = output_dir.join("corpus-report.json");
+    std::fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&report)? + "\n",
+    )
+    .with_context(|| format!("Failed to write: {}", report_path.display()))?;
+
+    println!(
+        "\n[validate-corpus --pipeline drawing-segment] \
+         passed={total_passed} failed={total_failed} errored={total_errored} \
+         total={total} pass_rate={:.1}%",
+        pass_rate * 100.0
+    );
+    println!("  report: {}", report_path.display());
+
+    Ok(())
+}
+
+
 
 #[cfg(test)]
 mod tests {

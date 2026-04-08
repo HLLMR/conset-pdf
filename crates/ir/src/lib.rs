@@ -23,6 +23,7 @@
 pub mod addendum;
 pub mod ast;
 pub mod diagnostics;
+pub mod drawing;
 pub mod edit;
 pub mod layout;
 pub mod render;
@@ -45,6 +46,11 @@ pub use edit::{EditError, EditOperation, EditRequest, EditResult, NodePath};
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
 pub use render::{PageSize, RenderConfig, RenderError, RenderResult, SpecChromeMetadata};
 pub use segment::{ChromeMetadata, CoverageStats, SectionEntry, SegmentIndex};
+pub use drawing::{
+    DrawingAddendumManifest, DrawingIndex, DrawingPatchResult, DisciplineSummary,
+    SheetChromeMetadata, SheetEntry, SheetPageRange, SheetPatchResult, SheetPatchStatus,
+    SheetRenameEvent, SheetReplaceSpec,
+};
 pub use stitch::{StitchError, StitchPlan, StitchResult};
 pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};
 pub use validation::{

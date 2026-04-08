@@ -350,12 +350,146 @@ fn fnv1a_object(obj: &Object) -> u64 {
     })
 }
 
+// ── Sprint 9.3 — Drawing Bookmark Generation ──────────────────────────────────
+
+/// Generate or replace the PDF outline (bookmarks) for a drawing-set document
+/// using the sheet metadata from a [`DrawingIndex`].
+///
+/// One top-level bookmark entry is written for each `SheetEntry`.  Display
+/// text is `"{sheet_id} — {sheet_title}"`.  Destination is the first page of
+/// the sheet (`/Fit` destination).  Any existing outline entries in the
+/// document are replaced wholesale.
+///
+/// Returns a list of non-fatal warning strings (empty on success).
+///
+/// # Bookmark PDF structure written
+///
+/// ```text
+/// /Catalog → /Outlines → (outline root dictionary with /Count)
+///               └── linked list of outline-item dictionaries:
+///                     /Title (string), /Dest [page_oid /Fit], /Parent,
+///                     /Next, /Prev
+/// ```
+pub fn generate_drawing_bookmarks(
+    doc: &mut Document,
+    index: &conset_pdf_ir::DrawingIndex,
+) -> Vec<String> {
+    let mut warnings: Vec<String> = Vec::new();
+
+    if index.sheets.is_empty() {
+        // Remove any existing /Outlines entry but otherwise do nothing.
+        if let Ok(catalog_id) = find_pages_root_id(doc)
+            .ok()
+            .map(|_| ())
+            .and(doc.catalog().ok().and_then(|c| {
+                // Catalog is a dict clone; we only need the catalog object ID.
+                // Retrieve it via trailer /Root.
+                doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok())
+            }))
+            .ok_or(())
+        {
+            if let Ok(Object::Dictionary(ref mut d)) = doc.get_object_mut(catalog_id) {
+                d.remove(b"Outlines");
+            }
+        }
+        return warnings;
+    }
+
+    // Collect the ObjectId of the first page of each sheet in order.
+    let page_ids = sorted_page_ids(doc);
+    if page_ids.is_empty() {
+        warnings.push("document has no pages; cannot generate bookmarks".to_owned());
+        return warnings;
+    }
+
+    // Allocate one outline-item object ID per sheet up front so we can wire
+    // /Next and /Prev links in a single pass.
+    let outline_root_id = doc.new_object_id();
+    let item_ids: Vec<ObjectId> = index.sheets.iter().map(|_| doc.new_object_id()).collect();
+    let n = item_ids.len();
+
+    // Build each outline-item dictionary.
+    for (i, sheet) in index.sheets.iter().enumerate() {
+        let page_idx = sheet.start_page;
+        let dest_page_id = if page_idx < page_ids.len() {
+            page_ids[page_idx]
+        } else {
+            warnings.push(format!(
+                "sheet '{}' start_page {page_idx} out of range ({} pages); \
+                 falling back to first page",
+                sheet.sheet_id,
+                page_ids.len()
+            ));
+            page_ids[0]
+        };
+
+        let display = format!(
+            "{} \u{2014} {}",
+            sheet.sheet_id, sheet.chrome.sheet_title
+        );
+
+        let mut item = lopdf::Dictionary::new();
+        item.set(
+            "Title",
+            Object::String(display.into_bytes(), lopdf::StringFormat::Literal),
+        );
+        item.set(
+            "Dest",
+            Object::Array(vec![
+                Object::Reference(dest_page_id),
+                Object::Name(b"Fit".to_vec()),
+            ]),
+        );
+        item.set("Parent", Object::Reference(outline_root_id));
+        if i > 0 {
+            item.set("Prev", Object::Reference(item_ids[i - 1]));
+        }
+        if i + 1 < n {
+            item.set("Next", Object::Reference(item_ids[i + 1]));
+        }
+
+        doc.objects.insert(item_ids[i], Object::Dictionary(item));
+    }
+
+    // Build the outline root.
+    let count = i64::try_from(n).unwrap_or(i64::MAX);
+    let mut root = lopdf::Dictionary::new();
+    root.set("Type", Object::Name(b"Outlines".to_vec()));
+    root.set("First", Object::Reference(item_ids[0]));
+    root.set("Last", Object::Reference(*item_ids.last().unwrap()));
+    root.set("Count", Object::Integer(count));
+    doc.objects.insert(outline_root_id, Object::Dictionary(root));
+
+    // Wire the outline root into the catalog.
+    let catalog_id = doc
+        .trailer
+        .get(b"Root")
+        .ok()
+        .and_then(|r| r.as_reference().ok());
+
+    match catalog_id {
+        Some(cid) => {
+            if let Ok(Object::Dictionary(ref mut d)) = doc.get_object_mut(cid) {
+                d.set("Outlines", Object::Reference(outline_root_id));
+            } else {
+                warnings.push("catalog object is not a dictionary; could not wire /Outlines".to_owned());
+            }
+        }
+        None => {
+            warnings.push("/Catalog not found in trailer /Root; could not wire /Outlines".to_owned());
+        }
+    }
+
+    warnings
+}
+
 // ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use conset_pdf_ir::{ChromeMetadata, CoverageStats, SectionEntry, SegmentIndex};
+    use conset_pdf_ir::{DisciplineSummary, DrawingIndex, SheetChromeMetadata, SheetEntry};
     use lopdf::{dictionary, Document, Object};
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -855,5 +989,98 @@ mod tests {
                 "original B page object {b_id:?} must be present in final doc"
             );
         }
+    }
+
+    // ── Sprint 9.3 — generate_drawing_bookmarks ───────────────────────────────
+
+    fn make_drawing_index_for_stitch(sheets: Vec<(&str, &str, usize)>) -> DrawingIndex {
+        let n = sheets.len();
+        DrawingIndex {
+            schema_version: "1.0.0".to_owned(),
+            sheet_count: n,
+            sheets: sheets
+                .into_iter()
+                .map(|(id, title, start_page)| SheetEntry {
+                    sheet_id: id.to_owned(),
+                    start_page,
+                    end_page: start_page,
+                    page_count: 1,
+                    chrome: SheetChromeMetadata {
+                        sheet_id: id.to_owned(),
+                        sheet_title: title.to_owned(),
+                        discipline: "MECH".to_owned(),
+                        confidence: 0.9,
+                        ..Default::default()
+                    },
+                    superseded_by: None,
+                    is_schedule_sheet: false,
+                })
+                .collect(),
+            discipline_summary: vec![DisciplineSummary {
+                canonical4: "MECH".to_owned(),
+                display_name: "Mechanical".to_owned(),
+                sheet_count: n,
+                sort_order: 70,
+            }],
+            total_pages: n,
+        }
+    }
+
+    /// An empty `DrawingIndex` must not add any bookmark objects to the doc.
+    #[test]
+    fn generate_drawing_bookmarks_empty_index_produces_no_entries() {
+        let bytes = build_test_pdf_bytes(2);
+        let mut doc = Document::load_mem(&bytes).expect("load test PDF");
+        let initial_obj_count = doc.objects.len();
+
+        let index = DrawingIndex {
+            schema_version: "1.0.0".to_owned(),
+            sheet_count: 0,
+            sheets: vec![],
+            discipline_summary: vec![],
+            total_pages: 2,
+        };
+
+        let warnings = generate_drawing_bookmarks(&mut doc, &index);
+        assert!(warnings.is_empty(), "no warnings expected for empty index; got: {warnings:?}");
+        // No bookmark objects should have been added.
+        assert_eq!(
+            doc.objects.len(),
+            initial_obj_count,
+            "no objects should be added for an empty drawing index"
+        );
+    }
+
+    /// Two sheets must produce two outline-item objects and one outline root.
+    #[test]
+    fn generate_drawing_bookmarks_two_sheets_produces_two_entries() {
+        let bytes = build_test_pdf_bytes(3);
+        let mut doc = Document::load_mem(&bytes).expect("load test PDF");
+        let initial_obj_count = doc.objects.len();
+
+        let index = make_drawing_index_for_stitch(vec![
+            ("M-201", "MECHANICAL EQUIPMENT PLAN", 0),
+            ("M-202", "MECHANICAL PIPING PLAN", 1),
+        ]);
+
+        let warnings = generate_drawing_bookmarks(&mut doc, &index);
+        assert!(warnings.is_empty(), "no warnings expected; got: {warnings:?}");
+
+        // 2 item objects + 1 outline root = 3 new objects.
+        let added = doc.objects.len() - initial_obj_count;
+        assert_eq!(added, 3, "expected 2 bookmark item objects + 1 outline root, got {added} new objects");
+
+        // Catalog must now reference /Outlines.
+        let catalog = doc.trailer.get(b"Root")
+            .and_then(|r| r.as_reference())
+            .and_then(|id| doc.get_object(id))
+            .expect("catalog must exist");
+        matches!(catalog, Object::Dictionary(_));
+        let has_outlines = if let Object::Dictionary(d) = catalog {
+            d.has(b"Outlines")
+        } else {
+            false
+        };
+        assert!(has_outlines, "/Catalog must contain /Outlines after bookmark generation");
     }
 }

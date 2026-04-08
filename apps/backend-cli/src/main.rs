@@ -208,6 +208,63 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Build a drawing sheet index from a drawing-set transcript JSON.
+    ///
+    /// Reads a `LayoutTranscript` JSON (produced by `extract`) and detects sheet
+    /// boundaries by locating title-block spans in the bottom/right regions of
+    /// each page.  Produces a `DrawingIndex` JSON with per-sheet metadata and
+    /// a discipline summary.
+    IndexDrawing {
+        /// Path to the input transcript JSON (produced by `extract`).
+        #[arg(short, long)]
+        input: String,
+        /// Path for the output DrawingIndex JSON.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Apply a drawing addendum manifest to replace sheets in a drawing-set PDF.
+    ///
+    /// Reads a `DrawingAddendumManifest` JSON that specifies the original drawing
+    /// set PDF, the addendum PDF, and which sheet IDs to replace.  Uses
+    /// title-block detection to locate sheets by ID in both PDFs, then stitches
+    /// the replacement pages in using lopdf.
+    ApplySheetAddendum {
+        /// Path to the `DrawingAddendumManifest` JSON file.
+        #[arg(long)]
+        manifest: String,
+        /// Path to write the `DrawingPatchResult` JSON summary.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Optional directory for audit bundle output (`change-report.json`,
+        /// `metrics.json`).
+        #[arg(long)]
+        audit_bundle: Option<String>,
+        /// Validate sheet matching only; do not write any output PDF.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Extract schedule tables from a drawing-set PDF transcript.
+    ///
+    /// Reads a `LayoutTranscript` JSON (produced by `extract`), builds a drawing
+    /// index to identify schedule sheets, and extracts tabular data from them.
+    /// Writes an `ExtractSchedulesOutput` JSON to `--output`.
+    ExtractSchedules {
+        /// Path to the input transcript JSON (produced by `extract`).
+        #[arg(short, long)]
+        input: String,
+        /// Path for the output schedules JSON.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Output format: `json` (default).
+        #[arg(long, default_value = "json")]
+        format: String,
+        /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -336,6 +393,26 @@ fn main() -> Result<()> {
         }
         Commands::Intake { input, output, dry_run } => {
             (WorkflowOperation::Intake, input.clone(), output.clone(), *dry_run, vec![])
+        }
+        Commands::IndexDrawing { input, output, dry_run } => {
+            (WorkflowOperation::IndexDrawing, input.clone(), output.clone(), *dry_run, vec![])
+        }
+        Commands::ApplySheetAddendum { manifest, output, audit_bundle, dry_run } => {
+            let mut meta = vec![
+                KeyValuePair { key: "manifest_path".to_owned(), value: manifest.clone() },
+            ];
+            if let Some(dir) = audit_bundle {
+                meta.push(KeyValuePair {
+                    key: "audit_bundle_dir".to_owned(),
+                    value: dir.clone(),
+                });
+            }
+            // input_path is unused for apply-sheet-addendum (manifest carries all paths);
+            // pass the manifest path so auditors can trace the request.
+            (WorkflowOperation::ApplySheetAddendum, manifest.clone(), output.clone(), *dry_run, meta)
+        }
+        Commands::ExtractSchedules { input, output, format: _, dry_run } => {
+            (WorkflowOperation::ExtractSchedules, input.clone(), output.clone(), *dry_run, vec![])
         }
     };
 
