@@ -153,7 +153,13 @@ pub fn run(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResponse 
 
 // ── Audit bundle ─────────────────────────────────────────────────────────────
 
-/// Write `change-report.json` (and later per-section artifacts) to `dir`.
+/// Write `change-report.json` and `diagnostics.jsonl` to `dir`.
+///
+/// `diagnostics.jsonl` format:
+/// - Line 1: schema header JSON object (not a `DiagnosticEvent`)
+/// - Lines 2+: one serialized `DiagnosticEvent` per line
+/// - If serialized size would exceed 8 MB, a sentinel truncation line is
+///   appended and no further events are written.
 fn write_audit_artifacts(
     dir: &std::path::Path,
     result: &AddendumResult,
@@ -162,6 +168,41 @@ fn write_audit_artifacts(
         .map_err(|e| format!("serialize change-report: {e}"))?;
     std::fs::write(dir.join("change-report.json"), change_report)
         .map_err(|e| format!("write change-report.json: {e}"))?;
+
+    const MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MB safety cap
+
+    let header = format!(
+        r#"{{"schema":"diagnostics/v1","pipeline_version":"{}","generated_at":"{}"}}"#,
+        env!("CARGO_PKG_VERSION"),
+        Utc::now().to_rfc3339(),
+    );
+    let mut lines: Vec<String> = vec![header];
+    let mut running_bytes = lines[0].len() + 1; // +1 for the newline
+
+    let mut events_written: usize = 0;
+    let mut truncated = false;
+
+    for event in &result.diagnostics {
+        let serialized = serde_json::to_string(event)
+            .map_err(|e| format!("serialize diagnostic event: {e}"))?;
+        running_bytes += serialized.len() + 1;
+        if running_bytes > MAX_BYTES {
+            truncated = true;
+            break;
+        }
+        events_written += 1;
+        lines.push(serialized);
+    }
+
+    if truncated {
+        lines.push(format!(
+            r#"{{"truncated":true,"reason":"size_cap_exceeded","events_written":{events_written}}}"#
+        ));
+    }
+
+    std::fs::write(dir.join("diagnostics.jsonl"), lines.join("\n"))
+        .map_err(|e| format!("write diagnostics.jsonl: {e}"))?;
+
     Ok(())
 }
 

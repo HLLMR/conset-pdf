@@ -50,13 +50,15 @@ const CHROME_CANDIDATES: &[&str] = &[
 
 /// Render `html` to PDF bytes using a local Chrome/Chromium installation.
 ///
+/// Returns `(pdf_bytes, chrome_binary_path)` on success.
+///
 /// # Errors
 ///
 /// - [`RenderError::ChromeNotFound`] — no Chrome binary located.
 /// - [`RenderError::ChromeRenderFailed`] — Chrome process exited with non-zero
 ///   status.
 /// - [`RenderError::Io`] — temp-file write or PDF read failed.
-pub fn render_html_to_pdf(html: &str) -> Result<Vec<u8>, RenderError> {
+pub fn render_html_to_pdf(html: &str) -> Result<(Vec<u8>, PathBuf), RenderError> {
     let chrome = find_chrome()?;
 
     // Write HTML to a temp file.
@@ -72,13 +74,36 @@ pub fn render_html_to_pdf(html: &str) -> Result<Vec<u8>, RenderError> {
         Ok(()) => {
             let bytes = std::fs::read(&pdf_path)?;
             let _ = std::fs::remove_file(&pdf_path);
-            Ok(bytes)
+            Ok((bytes, chrome))
         }
         Err(e) => {
             let _ = std::fs::remove_file(&pdf_path);
             Err(e)
         }
     }
+}
+
+/// Query the Chrome binary for its version string.
+///
+/// Runs `{path} --version` and returns the first line of stdout, trimmed.
+/// Returns `"unknown"` if the process fails, produces no output, or the
+/// invocation itself errors — version probe failure must never abort the
+/// render pipeline.
+///
+/// Chrome `--version` exits in <50 ms on all versions, so no OS-level timeout
+/// is applied; the call is effectively instantaneous.
+pub fn probe_chrome_version(path: &Path) -> String {
+    Command::new(path)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|out| {
+            String::from_utf8(out.stdout)
+                .ok()
+                .and_then(|s| s.lines().next().map(|l| l.trim().to_owned()))
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 /// Locate the Chrome binary.
@@ -214,9 +239,22 @@ mod tests {
     #[ignore]
     fn chrome_render_roundtrip() {
         let html = "<!DOCTYPE html><html><body><p>Hello PDF</p></body></html>";
-        let bytes = render_html_to_pdf(html).expect("render failed");
+        let (bytes, _chrome) = render_html_to_pdf(html).expect("render failed");
         // PDF files start with "%PDF-"
         assert!(bytes.starts_with(b"%PDF-"), "expected PDF header");
         assert!(bytes.len() > 1024, "PDF suspiciously small: {} bytes", bytes.len());
+    }
+
+    /// Verify `probe_chrome_version` returns a non-empty string when Chrome is
+    /// available on the host.  Ignored when Chrome is absent (CI without Chrome).
+    #[test]
+    #[ignore]
+    fn chrome_version_probe_returns_nonempty_string() {
+        let chrome = find_chrome().expect("Chrome not found — run with actual Chrome installed");
+        let version = probe_chrome_version(&chrome);
+        assert!(
+            !version.is_empty() && version != "unknown",
+            "expected a real version string, got: {version:?}"
+        );
     }
 }

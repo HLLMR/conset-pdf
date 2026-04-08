@@ -31,9 +31,25 @@
 //! | 5 | `N) text` | `1) Note …` |
 
 use crate::error::Result;
-use conset_pdf_ir::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout, SegmentIndex, LayoutTranscript};
+use conset_pdf_ir::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout, SegmentIndex, LayoutTranscript, SectionEntry};
 use regex::Regex;
 use std::sync::OnceLock;
+
+// ── Parse statistics ──────────────────────────────────────────────────────────
+
+/// Internal counters produced by a single `parse_section` call.
+///
+/// Returned alongside the [`SectionAst`] from [`parse_section_with_stats`] and
+/// used by the orchestrator to populate [`conset_pdf_ir::ParseDiagnostic`].
+pub struct ParseStats {
+    /// Total text lines fed to the classifier (after clustering).
+    pub total_lines: usize,
+    /// Lines discarded because they contained no alphanumeric content and had
+    /// no preceding structural node to fold into.
+    pub noise_lines_skipped: usize,
+    /// Synthetic PART nodes injected by the structural-recovery pass.
+    pub inject_missing_parts_count: usize,
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -149,6 +165,24 @@ fn parse_section(
     transcript: &LayoutTranscript,
     entry: &conset_pdf_ir::SectionEntry,
 ) -> SectionAst {
+    let (ast, _) = parse_section_inner(transcript, entry);
+    ast
+}
+
+/// Parse one section and return both the [`SectionAst`] and [`ParseStats`].
+///
+/// Used by the `SpecsPatchOrchestrator` to populate [`ParseDiagnostic`].
+pub fn parse_section_with_stats(
+    transcript: &LayoutTranscript,
+    entry: &SectionEntry,
+) -> (SectionAst, ParseStats) {
+    parse_section_inner(transcript, entry)
+}
+
+fn parse_section_inner(
+    transcript: &LayoutTranscript,
+    entry: &conset_pdf_ir::SectionEntry,
+) -> (SectionAst, ParseStats) {
     let pages = transcript.pages();
     let mut all_lines: Vec<(String, usize, f64)> = Vec::new();
 
@@ -194,11 +228,12 @@ fn parse_section(
 
     let layout = compute_section_layout(&x_vals, &x_right_vals, &font_sizes, &span_ys, &font_names);
 
-    let flat_items = classify_lines(&all_lines);
-    let flat_items = inject_missing_parts(flat_items);
+    let total_lines = all_lines.len();
+    let (flat_items, noise_lines_skipped) = classify_lines(&all_lines);
+    let (flat_items, inject_missing_parts_count) = inject_missing_parts(flat_items);
     let nodes = build_tree(&flat_items);
 
-    SectionAst {
+    let ast = SectionAst {
         section_id: entry.section_id.clone(),
         section_title: entry.section_title.clone(),
         start_page: entry.start_page,
@@ -206,7 +241,9 @@ fn parse_section(
         nodes,
         parse_warnings: Vec::new(),
         layout,
-    }
+    };
+    let stats = ParseStats { total_lines, noise_lines_skipped, inject_missing_parts_count };
+    (ast, stats)
 }
 
 // ── Line clustering ───────────────────────────────────────────────────────────
@@ -275,8 +312,13 @@ fn cluster_lines(
 /// Lines that do not match any outline pattern are folded into the text of the
 /// previously emitted structural item.  This handles wrapped paragraph text
 /// without creating spurious Unclassified nodes.
-fn classify_lines(lines: &[(String, usize, f64)]) -> Vec<FlatItem> {
+///
+/// Returns `(items, noise_lines_skipped)` where `noise_lines_skipped` counts
+/// decoration-only lines (non-empty, no alphanumeric content, no prior node
+/// to fold into) that are silently discarded.
+fn classify_lines(lines: &[(String, usize, f64)]) -> (Vec<FlatItem>, usize) {
     let mut items: Vec<FlatItem> = Vec::new();
+    let mut noise_count: usize = 0;
 
     for (text, page_index, x_indent) in lines {
         if let Some(mut item) = try_classify(text, *page_index) {
@@ -304,12 +346,14 @@ fn classify_lines(lines: &[(String, usize, f64)]) -> Vec<FlatItem> {
                         level: 0,
                         x_indent: *x_indent,
                     });
+                } else {
+                    noise_count += 1;
                 }
             }
         }
     }
 
-    items
+    (items, noise_count)
 }
 
 /// Attempt to match `text` against the CSI outline-marker patterns.
@@ -422,9 +466,13 @@ fn article_part_number(marker: &str) -> Option<u32> {
 /// Injection only occurs when at least one explicit PART has already been seen
 /// (front-matter sections with no PART structure are left unchanged) and the
 /// article's major number is ≥ 1 (guards against stray `0.x` decimal items).
-fn inject_missing_parts(items: Vec<FlatItem>) -> Vec<FlatItem> {
+///
+/// Returns `(items, inject_count)` where `inject_count` is the number of
+/// synthetic PART nodes that were inserted.
+fn inject_missing_parts(items: Vec<FlatItem>) -> (Vec<FlatItem>, usize) {
     let mut result: Vec<FlatItem> = Vec::with_capacity(items.len() + 4);
     let mut current_part: Option<u32> = None;
+    let mut inject_count: usize = 0;
 
     for item in items {
         if item.tag == OutlineTag::Part {
@@ -447,6 +495,7 @@ fn inject_missing_parts(items: Vec<FlatItem>) -> Vec<FlatItem> {
                         x_indent: 0.0,
                     });
                     current_part = Some(art_part);
+                    inject_count += 1;
                 }
             }
             result.push(item);
@@ -455,7 +504,7 @@ fn inject_missing_parts(items: Vec<FlatItem>) -> Vec<FlatItem> {
         }
     }
 
-    result
+    (result, inject_count)
 }
 
 // ── Tree builder ──────────────────────────────────────────────────────────────

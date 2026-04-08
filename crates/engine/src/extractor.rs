@@ -40,3 +40,34 @@ impl Default for Extractor {
         Self::new()
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use crate::error::EngineError;
+    use crate::pipeline::extraction::MAX_PDF_PAGES;
+
+    /// Verify the page cap constant has the documented default value.
+    /// Changing this value is a breaking change to the documented intake policy
+    /// and requires updating the constant doc comment.
+    #[test]
+    fn max_pdf_pages_has_expected_default() {
+        assert_eq!(MAX_PDF_PAGES, 2_000);
+    }
+
+    /// Verify `PdfTooLarge` renders an actionable error message including
+    /// both the actual count and the cap, and a suggested action.
+    #[test]
+    fn pdf_too_large_error_message_is_actionable() {
+        let err = EngineError::PdfTooLarge { page_count: 2_500, max: 2_000 };
+        let msg = err.to_string();
+        assert!(msg.contains("2500"), "message must include actual page count: {msg}");
+        assert!(msg.contains("2000"), "message must include cap: {msg}");
+        // Must include actionable guidance (split or increase limit).
+        assert!(
+            msg.contains("split") || msg.contains("increase"),
+            "message must suggest an action: {msg}"
+        );
+    }
+}

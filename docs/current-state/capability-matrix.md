@@ -1,7 +1,7 @@
 # Capability Matrix
 
-**Version:** 2.1.0  
-**Date:** April 6, 2026  
+**Version:** 2.2.0  
+**Date:** April 7, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented

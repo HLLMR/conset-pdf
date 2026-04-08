@@ -78,7 +78,11 @@ impl PdfStitcher {
 
         if !plan.dry_run {
             doc.save(&plan.output_path)
-                .map_err(|e| StitchError::WriteFailed(e.to_string()))?;
+                .map_err(|e| StitchError::WriteFailed(format!(
+                    "could not write output PDF to '{}': {e} — \
+                     check that the directory exists and the process has write permission",
+                    plan.output_path
+                )))?;
         }
 
         let pages_removed = del_end - del_start + 1;
@@ -188,7 +192,10 @@ fn splice_page_tree(
                 Object::Integer(i64::try_from(new_count).unwrap_or(i64::MAX)),
             );
         }
-        Err(e) => return Err(StitchError::PdfStructure(e.to_string())),
+        Err(e) => return Err(StitchError::PdfStructure(format!(
+            "could not access /Pages root at object {pages_root_id:?} — \
+             the PDF cross-reference table may be corrupt (lopdf: {e})"
+        ))),
     }
 
     // Re-parent replacement pages to the original's /Pages root.
@@ -206,10 +213,17 @@ fn splice_page_tree(
 /// Return the [`ObjectId`] of the `/Pages` root from the document catalog.
 fn find_pages_root_id(doc: &Document) -> Result<ObjectId, StitchError> {
     doc.catalog()
-        .map_err(|e| StitchError::PdfStructure(e.to_string()))?
+        .map_err(|e| StitchError::PdfStructure(format!(
+            "could not read /Catalog from PDF — the file may be corrupt, \
+             encrypted, or not a standard page-based document (lopdf: {e})"
+        )))?
         .get(b"Pages")
         .and_then(|obj| obj.as_reference())
-        .map_err(|e| StitchError::PdfStructure(e.to_string()))
+        .map_err(|e| StitchError::PdfStructure(format!(
+            "/Catalog object has no valid /Pages reference — this may be a \
+             portfolio, fillable form, or diagram rather than a specification \
+             book (lopdf: {e})"
+        )))
 }
 
 /// Reroute outline-item `/Dest` destinations that reference a deleted page to
@@ -539,5 +553,89 @@ mod tests {
 
         let err = PdfStitcher::stitch(&plan).unwrap_err();
         assert!(matches!(err, StitchError::ReplacementNotFound(_)));
+    }
+
+    // ── 8.1.A: malformed-input error-path tests ───────────────────────────────
+
+    /// Corrupt bytes in the *original* must return `OriginalNotFound` rather
+    /// than panicking.
+    #[test]
+    fn stitch_corrupt_original_returns_error_not_panic() {
+        let dir = std::env::temp_dir().join("conset-stitch-tests");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let corrupt_path = dir.join("corrupt-orig.pdf");
+        // Write clearly invalid PDF bytes — lopdf must return Err, not panic.
+        std::fs::write(&corrupt_path, b"NOT A PDF\x00\xFF garbage").expect("write corrupt file");
+
+        let repl_path = write_test_pdf("corrupt-orig-repl", 1);
+        let out_path = dir.join("corrupt-orig-out.pdf");
+
+        let plan = StitchPlan {
+            original_path: corrupt_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 0, 1),
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        assert!(
+            matches!(err, StitchError::OriginalNotFound(_)),
+            "corrupt original must return OriginalNotFound, got: {err:?}"
+        );
+    }
+
+    /// A section range that exceeds the document page count must return
+    /// `PageRangeOutOfBounds` rather than panicking with an index out-of-bounds.
+    #[test]
+    fn stitch_page_range_exceeds_document_returns_error_not_panic() {
+        let orig_path = write_test_pdf("oob-orig", 2); // 2-page PDF
+        let repl_path = write_test_pdf("oob-repl", 1);
+        let out_path = std::env::temp_dir().join("conset-stitch-tests").join("oob-out.pdf");
+
+        // Claim section spans pages 0–4 on a 2-page document.
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 4, 5), // end_page=4 >= total=2
+            replacement_path: repl_path.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: true,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        assert!(
+            matches!(err, StitchError::PageRangeOutOfBounds(_)),
+            "out-of-bounds range must return PageRangeOutOfBounds, got: {err:?}"
+        );
+    }
+
+    /// A corrupt *replacement* PDF (valid original, corrupt replacement) must
+    /// return `ReplacementNotFound` / a lopdf error — not a panic.
+    #[test]
+    fn stitch_corrupt_replacement_returns_error_not_panic() {
+        let orig_path = write_test_pdf("corrupt-repl-orig", 3);
+        let dir = std::env::temp_dir().join("conset-stitch-tests");
+        let corrupt_repl = dir.join("corrupt-repl.pdf");
+        std::fs::write(&corrupt_repl, b"%PDF-1.4 truncated\x00").expect("write corrupt file");
+        let out_path = dir.join("corrupt-repl-out.pdf");
+
+        let plan = StitchPlan {
+            original_path: orig_path.to_string_lossy().into_owned(),
+            section_id: "01 00 00".to_owned(),
+            segment_index: make_index("01 00 00", 0, 2, 3),
+            replacement_path: corrupt_repl.to_string_lossy().into_owned(),
+            output_path: out_path.to_string_lossy().into_owned(),
+            dry_run: false,
+        };
+
+        let err = PdfStitcher::stitch(&plan).unwrap_err();
+        // Corrupt replacement may surface as ReplacementNotFound or PdfStructure
+        // depending on how lopdf categorises the parse failure.
+        assert!(
+            matches!(err, StitchError::ReplacementNotFound(_) | StitchError::PdfStructure(_)),
+            "corrupt replacement must return a stitch error, got: {err:?}"
+        );
     }
 }

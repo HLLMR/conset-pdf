@@ -51,15 +51,18 @@ impl SectionRenderer {
 
         // Stage 2: Wrap with <head>, CSS, @page rules.
         let full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config, ast.layout.as_ref());
+        let html_size_bytes = full_html.len();
 
         // Stage 3: HTML → PDF via Chrome subprocess.
-        let pdf_bytes = chrome_pdf::render_html_to_pdf(&full_html)?;
+        let (pdf_bytes, chrome_path) = chrome_pdf::render_html_to_pdf(&full_html)?;
+        let chrome_binary = chrome_path.to_string_lossy().into_owned();
+        let chrome_binary_version = chrome_pdf::probe_chrome_version(&chrome_path);
 
         // Estimate page count from PDF byte content: count "Page" occurrences
         // in the xref table area is fragile; instead, count `/Page ` dict entries.
         let page_count_estimate = estimate_page_count(&pdf_bytes);
 
-        Ok(RenderResult { pdf_bytes, page_count_estimate, warnings: vec![] })
+        Ok(RenderResult { pdf_bytes, page_count_estimate, warnings: vec![], chrome_binary, chrome_binary_version, html_size_bytes })
     }
 
     /// Dry-run render: validate inputs and build the HTML but skip Chrome.
@@ -72,13 +75,17 @@ impl SectionRenderer {
         chrome_meta: &SpecChromeMetadata,
     ) -> RenderResult {
         let body_html = body::build_body_html(ast, &self.config, ast.layout.as_ref());
-        let _full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config, ast.layout.as_ref());
+        let full_html = chrome::build_full_html(&body_html, chrome_meta, &self.config, ast.layout.as_ref());
+        let html_size_bytes = full_html.len();
         RenderResult {
             pdf_bytes: Vec::new(),
             page_count_estimate: 0,
             warnings: vec![
                 "dry_run: HTML assembled successfully — Chrome render skipped".to_owned(),
             ],
+            chrome_binary: "dry-run".to_owned(),
+            chrome_binary_version: String::new(),
+            html_size_bytes,
         }
     }
 }

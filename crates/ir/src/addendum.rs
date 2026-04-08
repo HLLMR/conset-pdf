@@ -25,7 +25,7 @@
 //! Lower levels take precedence over higher ones.  Non-empty strings in an
 //! override replace the corresponding base field; empty strings are ignored.
 
-use crate::{EditOperation, SpecChromeMetadata};
+use crate::{diagnostics::DiagnosticEvent, EditOperation, SpecChromeMetadata};
 use serde::{Deserialize, Serialize};
 
 // ── AddendumManifest ──────────────────────────────────────────────────────────
@@ -192,6 +192,14 @@ pub struct AddendumResult {
     /// Absolute path to the stitched output PDF, or `None` on dry run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_path: Option<String>,
+
+    /// Structured diagnostic events from each pipeline stage.
+    ///
+    /// Empty when no diagnostics have been wired (pre-8.1.F).
+    /// The `#[serde(default)]` ensures existing `change-report.json` files
+    /// without this field remain deserializable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<DiagnosticEvent>,
 }
 
 impl AddendumResult {
@@ -211,6 +219,7 @@ impl AddendumResult {
             failed,
             section_results,
             output_path,
+            diagnostics: vec![],
         }
     }
 }

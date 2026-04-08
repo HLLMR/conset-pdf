@@ -84,6 +84,14 @@ pub struct RenderResult {
     pub page_count_estimate: u32,
     /// Non-fatal warnings emitted during rendering.
     pub warnings: Vec<String>,
+    /// Absolute path of the Chrome binary that was selected, or `"dry-run"`.
+    pub chrome_binary: String,
+    /// Version string from `{chrome_binary} --version`, e.g.
+    /// `"Google Chrome 120.0.6099.109"`.  Empty string on dry runs or when the
+    /// probe fails.
+    pub chrome_binary_version: String,
+    /// Byte length of the HTML document passed to Chrome.
+    pub html_size_bytes: usize,
 }
 
 /// Failure modes in the section-rendering pipeline.

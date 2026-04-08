@@ -13,6 +13,14 @@ use crate::error::{EngineError, Result};
 use conset_pdf_extraction::{PdfExtractor, PdfiumExtractor};
 use conset_pdf_ir::{normalize_bbox, BoundingBox, LayoutTranscript, Page, Span, TranscriptMetadata};
 
+/// Maximum number of pages accepted from a single PDF at intake.
+///
+/// PDFs exceeding this limit return [`EngineError::PdfTooLarge`] rather than
+/// attempting to materialise a potentially gigabyte-scale `LayoutTranscript`.
+/// 2,000 pages is well above the largest AEC specification books in the corpus;
+/// adjust if legitimate documents consistently exceed this limit.
+pub const MAX_PDF_PAGES: usize = 2_000;
+
 /// Runs the extraction stage for the given PDF path.
 ///
 /// # Errors
@@ -29,6 +37,12 @@ pub fn run(path: &str) -> Result<LayoutTranscript> {
 
     let page_count = extractor.get_page_count(&doc);
     log::debug!("Loaded '{path}': {page_count} page(s)");
+
+    // Page-count cap: guard against unbounded memory allocation on pathologically
+    // large or malformed PDFs.  See `MAX_PDF_PAGES` for the threshold and rationale.
+    if page_count > MAX_PDF_PAGES {
+        return Err(EngineError::PdfTooLarge { page_count, max: MAX_PDF_PAGES });
+    }
 
     // Canonicalize to an absolute path so transcripts remain portable when moved
     // to a different working directory before the visualize step.

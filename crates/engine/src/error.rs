@@ -16,6 +16,13 @@ pub enum EngineError {
     #[error("PDF extraction error: {0}")]
     ExtractionError(String),
 
+    /// The PDF exceeds the maximum allowed page count.
+    #[error(
+        "PDF has {page_count} pages, which exceeds the maximum of {max} pages — \
+         split the document into smaller files or increase the limit via the page-cap setting"
+    )]
+    PdfTooLarge { page_count: usize, max: usize },
+
     /// Document validation failed.
     #[error("Validation error: {0}")]
     ValidationError(String),

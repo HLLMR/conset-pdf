@@ -1958,3 +1958,157 @@ fn cli_apply_addendum_produces_valid_pdf() {
     );
 }
 
+// ── Sprint 8.1.D: Malformed-input graceful-failure tests ─────────────────────
+
+/// Corrupt PDF bytes (random garbage) must return status=failed; process exits 0.
+///
+/// Exercises the extraction-error path.  If the engine panics instead of
+/// returning an error the process exits non-zero and the assertion in
+/// `run_apply_addendum` fires, making the test fail with an actionable message.
+#[test]
+fn cli_apply_addendum_corrupt_original_fails_gracefully() {
+    let tmp = tmp_dir("apply-addendum-corrupt");
+
+    // Write a file that is definitely not a valid PDF.
+    let corrupt_pdf = tmp.join("corrupt.pdf");
+    std::fs::write(
+        &corrupt_pdf,
+        b"this is not a pdf\nfake binary content\x00\xff\xfe",
+    )
+    .expect("write corrupt pdf");
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[("23 82 16", serde_json::json!([]))],
+    );
+    let resp = run_apply_addendum(&corrupt_pdf, &manifest, None, None, false);
+
+    // Must be valid JSON WorkflowResponse with a graceful failure — not a crash.
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert_eq!(status, "failed", "expected failed for corrupt PDF, got: {resp}");
+}
+
+/// A PDF with no /Pages tree must return status=failed; process exits 0.
+///
+/// The minimal structure has a /Catalog but no /Pages reference, so pdfium
+/// either reports 0 pages or fails extraction — both must be handled gracefully.
+#[test]
+fn cli_apply_addendum_zero_page_pdf_fails_gracefully() {
+    let tmp = tmp_dir("apply-addendum-zero-page");
+
+    // Minimal PDF skeleton: /Catalog present, /Pages absent.
+    // The cross-reference offset is intentionally wrong to stress the parser further.
+    let zero_page_pdf = tmp.join("zero-page.pdf");
+    std::fs::write(
+        &zero_page_pdf,
+        b"%PDF-1.4\n\
+          1 0 obj\n<< /Type /Catalog >>\nendobj\n\
+          xref\n0 2\n\
+          0000000000 65535 f \n\
+          0000000009 00000 n \n\
+          trailer\n<< /Size 2 /Root 1 0 R >>\n\
+          startxref\n9\n\
+          %%EOF\n",
+    )
+    .expect("write zero-page pdf");
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[("23 82 16", serde_json::json!([]))],
+    );
+    let resp = run_apply_addendum(&zero_page_pdf, &manifest, None, None, false);
+
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert_eq!(status, "failed", "expected failed for zero-page PDF, got: {resp}");
+}
+
+/// A file with an unrecognised PDF version header must return status=failed;
+/// process exits 0.
+#[test]
+fn cli_apply_addendum_mismatched_pdf_version_fails_gracefully() {
+    let tmp = tmp_dir("apply-addendum-bad-version");
+
+    let bad_version_pdf = tmp.join("bad-version.pdf");
+    std::fs::write(
+        &bad_version_pdf,
+        b"%PDF-99.9\ngarbage content that no PDF parser will accept\x00\xff",
+    )
+    .expect("write bad-version pdf");
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[("23 82 16", serde_json::json!([]))],
+    );
+    let resp = run_apply_addendum(&bad_version_pdf, &manifest, None, None, false);
+
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert_eq!(
+        status, "failed",
+        "expected failed for bad-version PDF, got: {resp}"
+    );
+}
+
+// ── Sprint 8.1.G: diagnostics.jsonl audit output ─────────────────────────────
+
+/// When --audit-bundle is given, `diagnostics.jsonl` must be written alongside
+/// `change-report.json`.  The first line must be a valid JSON object containing
+/// the schema header fields (`schema`, `pipeline_version`, `generated_at`).
+#[test]
+fn cli_apply_addendum_writes_diagnostics_jsonl() {
+    let tmp = tmp_dir("apply-addendum-diagnostics-jsonl");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    // Segment to find a real section ID.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        return;
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("diagnostics jsonl test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+    let output_pdf = tmp.join("out.pdf");
+    let audit_dir = tmp.join("audit-bundle");
+
+    run_apply_addendum(&spec_pdf, &manifest, Some(&output_pdf), Some(&audit_dir), true);
+
+    let jsonl_path = audit_dir.join("diagnostics.jsonl");
+    assert!(jsonl_path.exists(), "diagnostics.jsonl must be written to --audit-bundle directory");
+
+    let jsonl_text = std::fs::read_to_string(&jsonl_path).expect("read diagnostics.jsonl");
+    let first_line = jsonl_text.lines().next().expect("diagnostics.jsonl must not be empty");
+    let header: serde_json::Value =
+        serde_json::from_str(first_line).expect("first line must be valid JSON");
+
+    assert_eq!(
+        header["schema"].as_str().unwrap_or(""),
+        "diagnostics/v1",
+        "schema header must be diagnostics/v1"
+    );
+    assert!(
+        !header["pipeline_version"].as_str().unwrap_or("").is_empty(),
+        "pipeline_version must be non-empty"
+    );
+    assert!(
+        !header["generated_at"].as_str().unwrap_or("").is_empty(),
+        "generated_at must be non-empty"
+    );
+}
+
