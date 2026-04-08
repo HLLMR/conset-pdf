@@ -2,7 +2,73 @@
 
 All notable changes to this project are documented in this file.
 
-## [2026-04-07] Phase 6 Complete: PDF Stitching (`lopdf`)
+## [2026-04-07] Phase 7 Complete: End-to-End Apply-Addendum Workflow
+
+### Added
+
+- **`crates/ir/src/addendum.rs`** — Phase 7 IR types for the apply-addendum pipeline:
+  - `AddendumManifest`: JSON contract with optional `description`, `issue_date`, `project_metadata` override, and required `sections: Vec<SectionEditSpec>`.
+  - `SectionEditSpec`: per-section patch spec with `section_id`, `operations: Vec<EditOperation>`, and optional `chrome_override`.
+  - `SectionPatchStatus`: enum discriminating `Success { pages_removed, pages_inserted }` vs `Failed { reason }`.
+  - `SectionPatchResult`: per-section outcome with `section_id`, `section_title`, and `status`.
+  - `AddendumResult`: orchestrator output with aggregate `total_sections`, `succeeded`, `failed`, per-section `section_results`, and optional `output_path`.
+  - Full serde round-trip tests for all types + `AddendumResult::from_results()` constructor.
+- **`crates/engine/src/specs_patch.rs`** — `SpecsPatchOrchestrator::run()` — core Phase 7 orchestration engine:
+  - **Algorithm**: Extract → Segment → [for each section] (Parse → Edit → Render Chrome OR dry-run) → Stitch (descending page-order, last-to-first).
+  - **Partial success**: per-section failures recorded in `SectionPatchResult`; other sections continue.
+  - **Chrome metadata merge**: base (extracted from source PDF) + manifest-level override + per-section override (highest priority).
+  - **Temp directory**: intermediate replacement PDFs and stitch outputs managed in `$TMPDIR/specs_patch_<timestamp>/`.
+  - **Issue date logic**: addendum `issue_date` only fills `metadata.date` when extracted date is empty.
+  - 5 unit tests covering chrome metadata merge edge cases.
+  - Exported from `crates/engine/src/lib.rs`.
+- **`apps/backend-cli/src/handlers/apply_addendum.rs`** — `ApplyAddendumHandler` for CLI:
+  - Loads and validates `AddendumManifest` JSON from `manifest_path` metadata key.
+  - Delegates to `SpecsPatchOrchestrator::run()`.
+  - Writes `change-report.json` to `--audit-bundle` directory when provided.
+  - Emits `OperationStarted`/`OperationEnded` audit events.
+  - Partial success: status is `failed` if all sections failed, `succeeded_with_warnings` if some succeeded.
+- **`ApplyAddendum` subcommand** in `apps/backend-cli/src/main.rs`:
+  - Args: `--original <PDF>` (source spec), `--addendum <JSON>` (AddendumManifest JSON), `--output <PDF>` (optional; skipped on dry-run), `--audit-bundle <DIR>` (optional), `[--dry-run]`.
+  - Wires to `WorkflowOperation::SpecsPatch` (contract variant already existed).
+- **5 Phase 7 integration tests** in `apps/backend-cli/tests/cli_integration_test.rs`:
+  - Dry-run on SPEC fixture — parses and edits but writes no output PDF.
+  - Missing original PDF — returns status=failed.
+  - Missing manifest JSON — returns status=failed.
+  - Unknown section ID in spec — partial success (marked as per-section failure in change-report).
+  - Audit artifacts written — change-report.json exists in `--audit-bundle` dir.
+  - Full round-trip Chrome test `#[ignore]` — real SPEC, real render, produces valid PDF with `%PDF` header.
+
+### Pre-Phase-7 Cleanup (Tasks 7.0.A and 7.0.B)
+
+- **Section title extraction in `crates/engine/src/segment.rs`** (Task 7.0.A):
+  - `detect_section_id()` now returns `Option<(String, String)>` — captures section_id + section_title from footer.
+  - `extract_title_from_clusters()` helper: scans footer clusters right-to-left after section ID cluster; strips leading `–` or `-`; trims whitespace.
+  - `build_sections()` populates `SectionEntry.section_title` from extracted title (empty string when not detected).
+  - 12 new unit tests covering footer format variants (em-dash, hyphen, no-title, multiple sections).
+  - `SectionEntry.section_title` is now guaranteed populated for all sections (previously always empty string).
+- **Documentation sync** (Task 7.0.B):
+  - `docs/state-summary.md`: "Next Focus" updated to reflect Phase 7 as apply-addendum.
+  - `docs/MASTER_PLAN.md`: Phase 7 dependency graph annotation clarified from `← ALPHA COMPLETE` to `← NEXT`.
+
+### Baseline
+
+- **36/36** CLI integration tests pass (30 pre-Phase 6 + 6 Phase 6 stitch; 2 Chrome `#[ignore]`).
+- **65/65** engine unit tests pass (53 pre-Phase 7 + 12 new segment titles).
+- **30/30** IR unit tests pass (18 prior + 12 new addendum types).
+- **5/5** specs_patch unit tests pass (chrome metadata merge edge cases).
+- **41/41** CLI integration tests pass (36 pre-Phase 7 + 5 Phase 7 apply-addendum; 2 Chrome `#[ignore]`).
+
+### Non-Negotiable Design Adherence
+
+- **Multi-section stitch order — last-to-first (descending page)** per Non-Negotiable #1. Stitching section B (page 200–210) before section A (page 50–60) preserves page indices for A when it is processed.
+- **Partial success** achieves Non-Negotiable #13 (soft fail on syntax / typographic errors) and #17 (downstream stages continue when one section fails).
+- **Chrome metadata override** prevents hand-patching: manifest-level and per-section chromemetadata let users update headers/footers without CLI changes.
+- **Dry-run mode** validates arg correctness and HTML assembly without invoking Chrome or writing files — safe testing mode.
+- **Audit bundle** captures full per-section change history: manifest, segment index, change report, per-section AST and PDFs.
+
+---
+
+## [2026-04-06] Font Typography Extraction (Phase 5.5 Supplement)
 
 ### Added
 

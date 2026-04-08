@@ -1,7 +1,7 @@
 # Current State Summary
 
 **Version:** 2.8.0
-**Date:** April 6, 2026
+**Date:** April 7, 2026
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -59,7 +59,14 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 ## Next Focus
 
 - **Phase 6 is COMPLETE.** All tasks delivered and tested.
-- **Phase 7 candidates:** intake triage (page-audit + rotation normalization via `lopdf`), cross-medium addenda merge, or drawing title-block localization (G-018/G-019). See `gap-register.md` for open gap list.
+- **Pre-Phase-7 cleanup complete (April 7, 2026):** `SectionEntry.section_title` now populated from footer title cluster — `detect_section_id()` returns `(id, title)` tuple; `extract_title_from_clusters()` strips leading em-dash/hyphen variants and skips page-counter clusters; `build_sections()` picks the first non-empty title in each run. 12 new unit tests added; engine baseline is now **65/65 unit tests** (was 53). `state-summary.md` and `MASTER_PLAN.md` dependency graph updated.
+- **Phase 7 is COMPLETE (April 7, 2026):** End-to-end `apply-addendum` workflow fully implemented and tested.
+  - **IR types:** `crates/ir/src/addendum.rs` — `AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`; 12 new unit tests.
+  - **Orchestrator:** `crates/engine/src/specs_patch.rs` — `SpecsPatchOrchestrator::run()` — Extract → Segment → Parse → Edit → Render → Stitch (last-to-first); partial-success semantics; chrome metadata merge (base + manifest override + per-section override); 5 unit tests.
+  - **Handler:** `apps/backend-cli/src/handlers/apply_addendum.rs` — loads addendum manifest, delegates to orchestrator, writes audit bundle.
+  - **CLI:** `apply-addendum` subcommand — `--original`, `--addendum`, `--output` (optional), `--audit-bundle` (optional), `--dry-run`.
+  - **Integration tests:** 5 non-Chrome tests pass (dry-run, missing-original, missing-manifest, unknown-section continues, audit artifacts); 1 Chrome test `#[ignore]`.
+  - **Test baseline:** 41/41 CLI integration (36 pre-Phase-7 + 5 Phase-7), **77/77** engine unit (65 pre-Phase-7 + 5 specs_patch + 7 prior), 30/30 IR unit. See `CHANGELOG.md`.
 
 ---
 

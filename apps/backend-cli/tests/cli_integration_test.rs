@@ -1654,3 +1654,307 @@ fn cli_stitch_produces_valid_pdf() {
         "summary should mention 'Stitched section': {summary}"
     );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 7 — apply-addendum integration tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Write a minimal `AddendumManifest` JSON to a temp file.
+///
+/// `sections` is a list of `(section_id, operations_json)` pairs where
+/// `operations_json` is a JSON array of `EditOperation` objects.
+fn write_minimal_addendum_manifest(
+    dir: &PathBuf,
+    description: Option<&str>,
+    sections: &[(&str, serde_json::Value)],
+) -> PathBuf {
+    let mut section_specs = Vec::new();
+    for (id, ops) in sections {
+        section_specs.push(serde_json::json!({
+            "section_id": id,
+            "operations": ops,
+        }));
+    }
+    let mut manifest = serde_json::json!({
+        "sections": section_specs,
+    });
+    if let Some(desc) = description {
+        manifest["description"] = serde_json::Value::String(desc.to_owned());
+    }
+    let path = dir.join("addendum.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&manifest).unwrap())
+        .expect("write addendum manifest");
+    path
+}
+
+/// Run `backend-cli apply-addendum` and return the parsed `WorkflowResponse`.
+///
+/// * `original`     — source spec PDF
+/// * `addendum`     — path to the AddendumManifest JSON
+/// * `output`       — desired output PDF path (None = omit `--output`)
+/// * `audit_bundle` — optional audit bundle directory
+/// * `dry_run`      — whether to pass `--dry-run`
+fn run_apply_addendum(
+    original: &PathBuf,
+    addendum: &PathBuf,
+    output: Option<&PathBuf>,
+    audit_bundle: Option<&PathBuf>,
+    dry_run: bool,
+) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+
+    let mut cmd = Command::new(&exe);
+    cmd.arg("apply-addendum")
+        .arg("--original").arg(original)
+        .arg("--addendum").arg(addendum);
+    if let Some(out) = output {
+        cmd.arg("--output").arg(out);
+    }
+    if let Some(bundle_dir) = audit_bundle {
+        cmd.arg("--audit-bundle").arg(bundle_dir);
+    }
+    if dry_run {
+        cmd.arg("--dry-run");
+    }
+
+    let result = cmd.output().expect("failed to spawn backend-cli apply-addendum");
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        result.status.success(),
+        "apply-addendum exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    serde_json::from_str(&stdout)
+        .expect("apply-addendum stdout must be valid JSON WorkflowResponse")
+}
+
+// ── Test: dry-run produces no output file ─────────────────────────────────────
+
+/// Dry-run on a real SPEC fixture: all sections parsed and edited, no PDF written.
+#[test]
+fn cli_apply_addendum_dry_run_no_write() {
+    let tmp = tmp_dir("apply-addendum-dry-run");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    // We need a section ID that actually exists in the fixture, so segment first.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        return; // No sections detected; fixture unsuitable — skip.
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    // Manifest with no-op (empty operations) for one real section.
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("dry-run test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+
+    let output_pdf = tmp.join("should_not_exist.pdf");
+    let resp = run_apply_addendum(&spec_pdf, &manifest, Some(&output_pdf), None, true);
+
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "dry-run must succeed: {resp}"
+    );
+    assert!(!output_pdf.exists(), "dry-run must not write output PDF");
+}
+
+// ── Test: missing original PDF ────────────────────────────────────────────────
+
+/// Non-existent source PDF must return status=failed; process exits 0.
+#[test]
+fn cli_apply_addendum_missing_original_fails() {
+    let tmp = tmp_dir("apply-addendum-missing-original");
+    let missing = tmp.join("nonexistent_source.pdf");
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[("23 82 16", serde_json::json!([]))],
+    );
+    let output = tmp.join("out.pdf");
+
+    let resp = run_apply_addendum(&missing, &manifest, Some(&output), None, false);
+
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for missing original: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+// ── Test: missing manifest file ───────────────────────────────────────────────
+
+/// Non-existent AddendumManifest JSON must return status=failed; process exits 0.
+#[test]
+fn cli_apply_addendum_missing_manifest_fails() {
+    let tmp = tmp_dir("apply-addendum-missing-manifest");
+    let spec_pdf = tier1("simple.pdf");
+    assert!(spec_pdf.exists(), "simple.pdf fixture missing");
+
+    let missing_manifest = tmp.join("nonexistent_manifest.json");
+    let output = tmp.join("out.pdf");
+
+    let resp =
+        run_apply_addendum(&spec_pdf, &missing_manifest, Some(&output), None, false);
+
+    assert_eq!(
+        resp["result"]["status"].as_str().unwrap_or(""),
+        "failed",
+        "expected failed for missing manifest: {resp}"
+    );
+    assert!(!output.exists(), "output must not be written on failure");
+}
+
+// ── Test: unknown section ID continues with partial success ───────────────────
+
+/// A section ID not present in the spec returns a per-section failure while
+/// the overall response reflects partial success (succeeded_with_warnings or
+/// failed depending on how many other sections there are).
+#[test]
+fn cli_apply_addendum_unknown_section_continues() {
+    let tmp = tmp_dir("apply-addendum-unknown-section");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    // Use a bogus section ID that definitely does not exist.
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        None,
+        &[("99 99 99", serde_json::json!([]))],
+    );
+    let output = tmp.join("out.pdf");
+
+    let resp = run_apply_addendum(&spec_pdf, &manifest, Some(&output), None, true);
+
+    assert_envelope(&resp);
+    // The pipeline must still return a valid response (exit 0), with
+    // status=failed because the only section failed.
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert_eq!(status, "failed", "single unknown section should yield failed: {resp}");
+}
+
+// ── Test: audit artifacts are written ────────────────────────────────────────
+
+/// When --audit-bundle is given, change-report.json must be written.
+#[test]
+fn cli_apply_addendum_writes_audit_artifacts() {
+    let tmp = tmp_dir("apply-addendum-audit");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    // Segment to find a real section ID.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        return;
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("audit artifacts test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+    let output_pdf = tmp.join("out.pdf");
+    let audit_dir = tmp.join("audit-bundle");
+
+    run_apply_addendum(&spec_pdf, &manifest, Some(&output_pdf), Some(&audit_dir), true);
+
+    let change_report_path = audit_dir.join("change-report.json");
+    assert!(
+        change_report_path.exists(),
+        "change-report.json must be written to --audit-bundle directory"
+    );
+
+    let report_text = std::fs::read_to_string(&change_report_path).expect("read change-report");
+    let report: serde_json::Value = serde_json::from_str(&report_text).expect("parse change-report");
+    assert!(report["total_sections"].as_u64().unwrap_or(0) >= 1, "change-report must have sections");
+}
+
+// ── Test: full round-trip (Chrome required; #[ignore] by default) ─────────────
+
+/// Full apply-addendum round-trip: real SPEC PDF + no-op manifest → valid PDF output.
+///
+/// Requires a Chrome/Brave installation and `PDFIUM_LIB_PATH`.  This test is
+/// marked `#[ignore]` and must be run explicitly:
+///
+/// ```
+/// cargo test -p conset-pdf-backend-cli cli_apply_addendum_produces_valid_pdf -- --ignored
+/// ```
+#[test]
+#[ignore]
+fn cli_apply_addendum_produces_valid_pdf() {
+    let tmp = tmp_dir("apply-addendum-full");
+    let spec_pdf = tier1("SPEC_RWB_LHHS_ALL_ORG.pdf");
+    assert!(spec_pdf.exists(), "SPEC fixture missing");
+
+    // Segment to find one real section.
+    let transcript_json = tmp.join("transcript.json");
+    run_extract(&spec_pdf, &transcript_json);
+    let segment_json = tmp.join("segment-index.json");
+    run_segment(&transcript_json, &segment_json);
+
+    let idx_text = std::fs::read_to_string(&segment_json).expect("read segment index");
+    let idx: serde_json::Value = serde_json::from_str(&idx_text).expect("parse segment index");
+    let sections = idx["sections"].as_array().expect("sections array");
+    if sections.is_empty() {
+        return;
+    }
+    let first_id = sections[0]["section_id"].as_str().expect("section_id").to_owned();
+
+    let manifest = write_minimal_addendum_manifest(
+        &tmp,
+        Some("full round-trip test"),
+        &[(&first_id, serde_json::json!([]))],
+    );
+
+    let output_pdf = tmp.join("revised-spec.pdf");
+    let audit_dir = tmp.join("audit-bundle");
+
+    let resp = run_apply_addendum(
+        &spec_pdf,
+        &manifest,
+        Some(&output_pdf),
+        Some(&audit_dir),
+        false,
+    );
+
+    assert_envelope(&resp);
+    let status = resp["result"]["status"].as_str().unwrap_or("");
+    assert!(
+        status == "succeeded" || status == "succeeded_with_warnings",
+        "apply-addendum must succeed: {resp}"
+    );
+
+    assert!(output_pdf.exists(), "apply-addendum must write output PDF");
+    let bytes = std::fs::read(&output_pdf).expect("read output PDF");
+    assert!(bytes.starts_with(b"%PDF"), "output must start with %PDF header");
+    assert!(bytes.len() > 1024, "output PDF is suspiciously small ({} bytes)", bytes.len());
+
+    // Audit artifact check.
+    assert!(
+        audit_dir.join("change-report.json").exists(),
+        "change-report.json must exist in audit bundle"
+    );
+}
+

@@ -6,6 +6,7 @@
 //! This layer is the **only** place in the codebase where `contracts` types are
 //! translated to and from the engine's `LayoutTranscript`-typed API.
 
+pub mod apply_addendum;
 pub mod edit;
 pub mod extract;
 pub mod parse;
@@ -30,6 +31,7 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::Edit => edit::run(req, bundle),
         WorkflowOperation::Regenerate => regenerate::run(req, bundle),
         WorkflowOperation::Stitch => stitch::run(req, bundle),
+        WorkflowOperation::SpecsPatch => apply_addendum::run(req, bundle),
         WorkflowOperation::Visualize => visualize::run(req, bundle),
         WorkflowOperation::VisualizeSegments => visualize_segments::run(req, bundle),
         WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),

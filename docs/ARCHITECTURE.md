@@ -1,6 +1,6 @@
 # Conset PDF: Architecture
 
-**Version:** 4.7.0  
+**Version:** 4.8.0  
 **Date:** April 7, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
@@ -173,13 +173,13 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 ### Current Implementation Snapshot (April 2026)
 
-- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast, **stitch** commands with typed audit bundles. All 9 handlers emit `OperationStarted`/`OperationEnded` audit events.
+- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast, stitch, **apply-addendum** commands with typed audit bundles. All 10 handlers emit `OperationStarted`/`OperationEnded` audit events.
 - `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes working pipeline stages through Phase 6 + layout geometry supplement: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess, and **stitch engine** (`stitch.rs`) — `PdfStitcher::stitch()` replacing target section pages in the original PDF via lopdf: object renumbering, `/Kids` splice, `/Parent` fixup, deleted-page object removal, bookmark re-routing, unchanged-page validation.
+- `crates/engine` exposes working pipeline stages through Phase 7: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational with section title extraction, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess, stitch engine (`stitch.rs`) — `PdfStitcher::stitch()` replacing target section pages in the original PDF via lopdf, and **specs-patch orchestrator** (`specs_patch.rs`) — `SpecsPatchOrchestrator::run()` orchestrating end-to-end apply-addendum workflow with Extract → Segment → Parse → Edit → Render → Stitch pipeline, partial-success semantics, and 3-level chrome metadata merge.
 - `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
-- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`), and **Phase 6 stitch types** (`StitchPlan`, `StitchResult`, `StitchError`); `Span` now carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
+- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`), Phase 6 stitch types (`StitchPlan`, `StitchResult`, `StitchError`), and **Phase 7 addendum types** (`AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`); `Span` carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
 - `crates/audit` models and persistence implemented; all handlers emit audit events (G-006 closed).
-- **lopdf 0.40.0** is wired as the write backend for Phase 6 stitching; `rust-version` bumped to 1.85 in the workspace `Cargo.toml` to satisfy MSRV.
+- **lopdf 0.40.0** is wired as the write backend for PDF stitching; **Chrome/Brave discovery** is operational for section regeneration; `rust-version` bumped to 1.85 in the workspace `Cargo.toml` to satisfy MSRV.
 
 Detailed evidence and open gaps are tracked in `docs/current-state/capability-matrix.md` and `docs/current-state/gap-register.md`.
 

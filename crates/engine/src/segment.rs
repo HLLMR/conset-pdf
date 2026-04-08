@@ -100,6 +100,8 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
 
     // Per-page footer section IDs (None = not detected).
     let mut page_section_ids: Vec<Option<String>> = Vec::with_capacity(pages.len());
+    // Per-page section titles (empty string when not detected).
+    let mut page_section_titles: Vec<String> = Vec::with_capacity(pages.len());
     // Per-page page-counter presence.
     let mut page_counter_flags: Vec<bool> = Vec::with_capacity(pages.len());
 
@@ -120,9 +122,13 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
             .iter()
             .filter(|s| s.bbox.y > FOOTER_Y)
             .collect();
-        let found_id = detect_section_id(&footer_spans);
+        let (found_id, found_title) = match detect_section_id(&footer_spans) {
+            Some((id, title)) => (Some(id), title),
+            None => (None, String::new()),
+        };
 
         page_section_ids.push(found_id);
+        page_section_titles.push(found_title);
         page_counter_flags.push(found_counter);
     }
 
@@ -130,7 +136,7 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
     let chrome_metadata = extract_chrome_metadata(transcript);
 
     // Build section list.
-    let sections = build_sections(&page_section_ids, &page_counter_flags);
+    let sections = build_sections(&page_section_ids, &page_section_titles, &page_counter_flags);
 
     // Coverage.
     let pages_tagged = page_section_ids.iter().filter(|id| id.is_some()).count();
@@ -157,7 +163,8 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/// Detect the CSI section-ID from a pre-filtered slice of footer-band spans.
+/// Detect the CSI section-ID and section title from a pre-filtered slice of
+/// footer-band spans.
 ///
 /// The footer layout for this corpus is:
 /// `[yyyy-mm-dd date]  [NN NN NN section-id]  [– section-name]  [Page N]`
@@ -171,7 +178,10 @@ pub fn segment_transcript(transcript: &LayoutTranscript) -> Result<SegmentIndex>
 ///
 /// A final pre-processing pass merges adjacent single-digit tokens (`"0 0"` →
 /// `"00"`) to handle split-zero rendering artefacts before pattern matching.
-fn detect_section_id(footer_spans: &[&Span]) -> Option<String> {
+///
+/// Returns `Some((section_id, section_title))` where `section_title` may be an
+/// empty string when no title cluster is found after the section-ID cluster.
+fn detect_section_id(footer_spans: &[&Span]) -> Option<(String, String)> {
     if footer_spans.is_empty() {
         return None;
     }
@@ -221,7 +231,7 @@ fn detect_section_id(footer_spans: &[&Span]) -> Option<String> {
     }
 
     // Inspect each cluster for a section ID.
-    for cluster in &clusters {
+    for (i, cluster) in clusters.iter().enumerate() {
         // Skip clusters that contain a 4-digit year (date cluster).
         if four_digit_re().is_match(cluster) {
             continue;
@@ -234,11 +244,43 @@ fn detect_section_id(footer_spans: &[&Span]) -> Option<String> {
             })
             .into_owned();
         if let Some(caps) = section_id_re().captures(&merged) {
-            return Some(normalise_section_id(&caps));
+            let section_id = normalise_section_id(&caps);
+            let section_title = extract_title_from_clusters(&clusters, i + 1);
+            return Some((section_id, section_title));
         }
     }
 
     None
+}
+
+/// Extract the section title from the clusters that follow the section-ID cluster.
+///
+/// The title cluster is typically formatted as `"– SECTION TITLE"` or
+/// `"SECTION TITLE"`.  Leading em-dashes, hyphens, and whitespace are stripped.
+/// Clusters that look like page counters or are purely numeric are skipped.
+fn extract_title_from_clusters(clusters: &[String], start: usize) -> String {
+    if start >= clusters.len() {
+        return String::new();
+    }
+    for cluster in &clusters[start..] {
+        // Skip page-counter clusters ("Page N of M").
+        if page_counter_re().is_match(cluster) {
+            continue;
+        }
+        // Skip pure-digit or date clusters.
+        let letters: usize = cluster.chars().filter(|c| c.is_alphabetic()).count();
+        if letters == 0 {
+            continue;
+        }
+        // Strip leading dash variants and whitespace.
+        let stripped = cluster
+            .trim_start_matches(|c: char| c == '\u{2013}' || c == '\u{2014}' || c == '-' || c == ' ')
+            .trim();
+        if !stripped.is_empty() {
+            return stripped.to_owned();
+        }
+    }
+    String::new()
 }
 
 /// Normalise a section-ID regex capture to canonical form `"NN NN"` or `"NN NN NN"`.
@@ -249,9 +291,13 @@ fn normalise_section_id(caps: &regex::Captures<'_>) -> String {
     }
 }
 
-/// Build the ordered section list from per-page section IDs.
+/// Build the ordered section list from per-page section IDs and titles.
+///
+/// The section title stored on each [`SectionEntry`] is taken from the first
+/// page in the run that has a non-empty detected title.
 fn build_sections(
     page_section_ids: &[Option<String>],
+    page_section_titles: &[String],
     page_counter_flags: &[bool],
 ) -> Vec<SectionEntry> {
     let mut sections: Vec<SectionEntry> = Vec::new();
@@ -266,6 +312,7 @@ fn build_sections(
                  run_start: usize,
                  run_end: usize,
                  run_hits: usize,
+                 page_section_titles: &[String],
                  page_counter_flags: &[bool],
                  sections: &mut Vec<SectionEntry>| {
         let sid = match run_id {
@@ -275,9 +322,15 @@ fn build_sections(
         let page_count = run_end - run_start + 1;
         let confidence = run_hits as f64 / page_count as f64;
         let page_counter_detected = page_counter_flags[run_start..=run_end].iter().any(|&f| f);
+        // Use the first non-empty title found within the run's pages.
+        let section_title = page_section_titles[run_start..=run_end]
+            .iter()
+            .find(|t| !t.is_empty())
+            .cloned()
+            .unwrap_or_default();
         sections.push(SectionEntry {
             section_id: sid,
-            section_title: String::new(),
+            section_title,
             start_page: run_start,
             end_page: run_end,
             page_count,
@@ -307,7 +360,7 @@ fn build_sections(
         };
 
         if boundary {
-            flush(&run_id, run_start, i - 1, run_hits, page_counter_flags, &mut sections);
+            flush(&run_id, run_start, i - 1, run_hits, page_section_titles, page_counter_flags, &mut sections);
             run_id = id_opt.clone();
             run_start = i;
             run_hits = usize::from(id_opt.is_some());
@@ -320,7 +373,7 @@ fn build_sections(
 
     // Flush the last run.
     if n > 0 {
-        flush(&run_id, run_start, n - 1, run_hits, page_counter_flags, &mut sections);
+        flush(&run_id, run_start, n - 1, run_hits, page_section_titles, page_counter_flags, &mut sections);
     }
 
     sections
@@ -422,4 +475,158 @@ fn is_all_upper(text: &str) -> bool {
     }
     let upper_count = letters.iter().filter(|c| c.is_uppercase()).count();
     upper_count as f64 / letters.len() as f64 > 0.8
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use conset_pdf_ir::{BBox, Span};
+
+    /// Build a minimal `Span` fixture at the given x/y coordinates.
+    fn make_span(text: &str, x: f64, y: f64) -> Span {
+        Span::new(text, BBox::new(x, y, 0.05, 0.01).unwrap(), 10.0).unwrap()
+    }
+
+    // ── detect_section_id ─────────────────────────────────────────────────────
+
+    /// Canonical corpus footer layout:
+    ///   date cluster | section-id cluster | em-dash title cluster | page counter
+    #[test]
+    fn test_detect_section_id_with_title() {
+        let spans = vec![
+            make_span("2025-10-01", 0.05, 0.95),
+            make_span("23", 0.30, 0.95),
+            make_span("82", 0.35, 0.95),
+            make_span("16", 0.40, 0.95),
+            make_span("– HEATING WATER COILS", 0.50, 0.95),
+            make_span("Page 2 of 3", 0.85, 0.95),
+        ];
+        let span_refs: Vec<&Span> = spans.iter().collect();
+        let result = detect_section_id(&span_refs);
+        let (id, title) = result.expect("should detect section id and title");
+        assert_eq!(id, "23 82 16");
+        assert_eq!(title, "HEATING WATER COILS");
+    }
+
+    /// Title cluster without the em-dash prefix.
+    #[test]
+    fn test_detect_section_id_title_no_dash() {
+        let spans = vec![
+            make_span("2025-10-01", 0.05, 0.95),
+            make_span("23 82 16", 0.30, 0.95),
+            // Gap between section id and title spans
+            make_span("HEATING WATER COILS", 0.60, 0.95),
+        ];
+        let span_refs: Vec<&Span> = spans.iter().collect();
+        let (id, title) = detect_section_id(&span_refs).expect("should detect id");
+        assert_eq!(id, "23 82 16");
+        assert_eq!(title, "HEATING WATER COILS");
+    }
+
+    /// No title cluster present — title should come back empty.
+    #[test]
+    fn test_detect_section_id_no_title() {
+        let spans = vec![
+            make_span("2025-10-01", 0.05, 0.95),
+            make_span("23 82 16", 0.30, 0.95),
+        ];
+        let span_refs: Vec<&Span> = spans.iter().collect();
+        let (id, title) = detect_section_id(&span_refs).expect("should detect id");
+        assert_eq!(id, "23 82 16");
+        assert_eq!(title, "");
+    }
+
+    /// No recognised section-ID in the footer — returns None.
+    #[test]
+    fn test_detect_section_id_no_match_returns_none() {
+        let spans = vec![
+            make_span("2025-10-01", 0.05, 0.95),
+            make_span("G1.01", 0.30, 0.95),
+        ];
+        let span_refs: Vec<&Span> = spans.iter().collect();
+        assert!(detect_section_id(&span_refs).is_none());
+    }
+
+    /// Empty span slice — returns None.
+    #[test]
+    fn test_detect_section_id_empty_spans() {
+        assert!(detect_section_id(&[]).is_none());
+    }
+
+    // ── extract_title_from_clusters ───────────────────────────────────────────
+
+    #[test]
+    fn test_extract_title_strips_em_dash() {
+        let clusters =
+            vec!["– HEATING WATER COILS".to_owned(), "Page 2 of 3".to_owned()];
+        let title = extract_title_from_clusters(&clusters, 0);
+        assert_eq!(title, "HEATING WATER COILS");
+    }
+
+    #[test]
+    fn test_extract_title_strips_hyphen() {
+        let clusters = vec!["- TABLE OF CONTENTS".to_owned()];
+        let title = extract_title_from_clusters(&clusters, 0);
+        assert_eq!(title, "TABLE OF CONTENTS");
+    }
+
+    #[test]
+    fn test_extract_title_skips_page_counter() {
+        let clusters =
+            vec!["Page 1 of 5".to_owned(), "HVAC SPECIFICATIONS".to_owned()];
+        let title = extract_title_from_clusters(&clusters, 0);
+        assert_eq!(title, "HVAC SPECIFICATIONS");
+    }
+
+    #[test]
+    fn test_extract_title_empty_when_only_page_counter() {
+        let clusters = vec!["Page 1 of 5".to_owned()];
+        assert_eq!(extract_title_from_clusters(&clusters, 0), "");
+    }
+
+    #[test]
+    fn test_extract_title_start_beyond_end() {
+        let clusters = vec!["23 82 16".to_owned()];
+        assert_eq!(extract_title_from_clusters(&clusters, 5), "");
+    }
+
+    // ── build_sections ────────────────────────────────────────────────────────
+
+    /// Section titles should be populated from the first non-empty title in each run.
+    #[test]
+    fn test_build_sections_title_populated() {
+        let ids = vec![
+            Some("23 82 16".to_owned()),
+            Some("23 82 16".to_owned()),
+            Some("23 82 16".to_owned()),
+        ];
+        let titles = vec![
+            "HEATING WATER COILS".to_owned(),
+            "HEATING WATER COILS".to_owned(),
+            "HEATING WATER COILS".to_owned(),
+        ];
+        let counters = vec![false, true, false];
+        let sections = build_sections(&ids, &titles, &counters);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].section_id, "23 82 16");
+        assert_eq!(sections[0].section_title, "HEATING WATER COILS");
+    }
+
+    /// When only later pages in a run have a detectable title, it is still captured.
+    #[test]
+    fn test_build_sections_title_from_later_page_in_run() {
+        let ids = vec![
+            Some("23 82 16".to_owned()),
+            Some("23 82 16".to_owned()),
+        ];
+        let titles = vec![
+            String::new(), // first page footer had no title
+            "HEATING WATER COILS".to_owned(),
+        ];
+        let counters = vec![false, false];
+        let sections = build_sections(&ids, &titles, &counters);
+        assert_eq!(sections[0].section_title, "HEATING WATER COILS");
+    }
 }

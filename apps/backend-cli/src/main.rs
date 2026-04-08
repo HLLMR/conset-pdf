@@ -174,6 +174,28 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Apply an addendum manifest to a source spec PDF, producing a revised PDF.
+    ///
+    /// Extracts the transcript, segments, parses, applies edits, regenerates sections
+    /// via headless Chrome, and stitches the replacements in last-to-first page order.
+    /// Partial success: failed sections are recorded; other sections still proceed.
+    ApplyAddendum {
+        /// Path to the original (source) spec PDF.
+        #[arg(long)]
+        original: String,
+        /// Path to the AddendumManifest JSON file.
+        #[arg(long)]
+        addendum: String,
+        /// Path for the revised output PDF (skipped on dry-run).
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Directory for audit bundle artifacts (optional; skipped when absent).
+        #[arg(long)]
+        audit_bundle: Option<String>,
+        /// Validate, parse, and edit all sections but skip Chrome render and PDF write.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -280,6 +302,25 @@ fn main() -> Result<()> {
                 KeyValuePair { key: "section_id".to_owned(), value: section.clone() },
             ];
             (WorkflowOperation::Stitch, input.clone(), Some(output.clone()), *dry_run, meta)
+        }
+        Commands::ApplyAddendum { original, addendum, output, audit_bundle, dry_run } => {
+            let mut meta = vec![
+                KeyValuePair {
+                    key: "manifest_path".to_owned(),
+                    value: addendum.clone(),
+                },
+                KeyValuePair {
+                    key: "original_path".to_owned(),
+                    value: original.clone(),
+                },
+            ];
+            if let Some(bundle_dir) = audit_bundle {
+                meta.push(KeyValuePair {
+                    key: "audit_bundle_dir".to_owned(),
+                    value: bundle_dir.clone(),
+                });
+            }
+            (WorkflowOperation::SpecsPatch, original.clone(), output.clone(), *dry_run, meta)
         }
     };
 

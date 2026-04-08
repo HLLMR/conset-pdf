@@ -1,5 +1,5 @@
 # Conset PDF: Master Plan
-**Version:** 4.7.0 (Phase 6 — PDF Stitching via lopdf)  
+**Version:** 4.8.0 (Phase 7 — End-to-End Apply-Addendum Workflow)  
 **Date:** April 7, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
@@ -898,7 +898,7 @@ Phase 5.5: Layout Geometry + Font Typography (supplement) ← COMPLETE
     ↓
 Phase 6: PDF Stitching (Week 13) ← COMPLETE
     ↓
-Phase 7: End-to-End (Week 14) ← ALPHA COMPLETE
+Phase 7: End-to-End (Week 14) ← COMPLETE
     ↓
 Phase 8: Production Hardening (Weeks 15-16)
     ↓
@@ -1360,11 +1360,11 @@ cargo run --bin backend-cli -- stitch \
 **Goal:** Single command applies addendum edits.
 
 **Deliverables:**
-- ☐ Unified CLI command
-- ☐ JSON addendum format
-- ☐ End-to-end processing pipeline
-- ☐ Comprehensive error handling
-- ☐ Audit bundle generation
+- ✅ Unified CLI command (`apply-addendum` subcommand in `backend-cli`)
+- ✅ JSON addendum format (`AddendumManifest` IR types in `crates/ir/src/addendum.rs`)
+- ✅ End-to-end processing pipeline (`SpecsPatchOrchestrator::run()` in `crates/engine/src/specs_patch.rs`)
+- ✅ Comprehensive error handling (partial-success semantics; per-section failures tracked; error rollup in `AddendumResult`)
+- ✅ Audit bundle generation (change-report.json written to `--audit-bundle` directory; `OperationStarted`/`OperationEnded` events emitted)
 
 **Test:**
 ```bash
@@ -1376,17 +1376,17 @@ cargo run -- apply-addendum \
 ```
 
 **Output:** 
-- Updated PDF with edits applied
-- Audit bundle with overlays, logs, metrics
-- Change report (which sections modified, which pages replaced)
+- Updated PDF with edits applied (stitch order: last-to-first to preserve page indices)
+- Audit bundle with change report, logs, metrics, per-section outputs
+- Change report (which sections modified, which pages replaced, succeeded/failed counts)
 
 **Definition of Done:**
-- End-to-end workflow works on structured addendum
-- All edits applied correctly
-- Section boundaries preserved
-- Unchanged sections verbatim copied
-- Audit bundle is complete and readable
-- **Ready for internal testing (ALPHA COMPLETE)**
+- ✅ End-to-end workflow works on structured addendum
+- ✅ All edits applied correctly (edit operations mapped through parse/edit/render pipeline)
+- ✅ Section boundaries preserved (extract from original, identify target section by ID, apply edits, regenerate, stitch)
+- ✅ Unchanged sections verbatim copied (stitcher preserves out-of-range pages unchanged)
+- ✅ Audit bundle is complete and readable (per-section results in change-report.json)
+- ✅ **Ready for internal testing (ALPHA COMPLETE)**
 
 ---
 
@@ -1395,7 +1395,7 @@ cargo run -- apply-addendum \
 **Goal:** Production-ready engine.
 
 **Deliverables:**
-- ☐ Comprehensive error handling
+- ☐ Comprehensive error handling 
 - ☐ Memory safety (crash containment, caps)
 - ☐ Performance optimization (large PDFs)
 - ☐ Torture corpus validation (≥95% pass rate)

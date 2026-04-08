@@ -20,6 +20,7 @@
 //! let transcript = LayoutTranscript::new();
 //! ```
 
+pub mod addendum;
 pub mod ast;
 pub mod edit;
 pub mod layout;
@@ -30,6 +31,9 @@ pub mod types;
 pub mod validation;
 
 // Re-export main types for convenience
+pub use addendum::{
+    AddendumManifest, AddendumResult, SectionEditSpec, SectionPatchResult, SectionPatchStatus,
+};
 pub use ast::{AstNode, OutlineTag, ParsedDocument, SectionAst, SectionLayout};
 pub use edit::{EditError, EditOperation, EditRequest, EditResult, NodePath};
 pub use layout::{LayoutTranscript, MetadataError, TranscriptError, TranscriptMetadata};
