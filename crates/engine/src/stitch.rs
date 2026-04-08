@@ -381,7 +381,7 @@ pub fn generate_drawing_bookmarks(
         if let Ok(catalog_id) = find_pages_root_id(doc)
             .ok()
             .map(|_| ())
-            .and(doc.catalog().ok().and_then(|c| {
+            .and(doc.catalog().ok().and_then(|_c| {
                 // Catalog is a dict clone; we only need the catalog object ID.
                 // Retrieve it via trailer /Root.
                 doc.trailer.get(b"Root").ok().and_then(|r| r.as_reference().ok())

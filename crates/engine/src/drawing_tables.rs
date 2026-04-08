@@ -302,7 +302,7 @@ mod tests {
         let headers = [("TAG", 0.10), ("DESCRIPTION", 0.40), ("CFM", 0.70)];
         for (text, x) in &headers {
             let bbox = BBox::new(*x, 0.10, 0.05, 0.02).unwrap();
-            let mut span = Span::new(text, bbox, 10.0).unwrap();
+            let span = Span::new(text, bbox, 10.0).unwrap();
             page.add_span(span).unwrap();
         }
 

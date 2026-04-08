@@ -648,7 +648,7 @@ mod tests {
     /// Sheets not present in the original index must emit `NotFound` status.
     #[test]
     fn orchestrator_not_found_sheet_emits_not_found_status() {
-        let manifest = DrawingAddendumManifest {
+        let _manifest = DrawingAddendumManifest {
             schema_version: "1.0.0".to_owned(),
             original_drawing_set: "__nonexistent_original__.pdf".to_owned(),
             addendum_pdf: "__nonexistent_addendum__.pdf".to_owned(),
