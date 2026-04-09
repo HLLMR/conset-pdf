@@ -2,6 +2,229 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-11] Sprint 10.5 Complete: Corpus Validation + Determinism + Documentation
+
+### Added
+
+- **`tools/pattern_dev.rs`** — Sprint 10.5.A: `run_validate_corpus_submittal` function + `"submittal-extract"` dispatch arm:
+  - `--pipeline submittal-extract` batch-validates all `SUB_*.pdf` tier-1 fixtures
+  - Per fixture: `SubmittalSegmentEngine::build_index` → per-unit `extract_kv_pairs` + `extract_unit_tables` → `build_equipment_dataset`
+  - Pass thresholds: `SUBMITTAL_MIN_UNIT_COUNT = 1`, `SUBMITTAL_MIN_RECORD_COUNT = 1`
+  - Output: `sub-corpus-report.json` (schema: `schema_version`, `generated_at`, `pipeline`, `thresholds`, `aggregate`, `fixtures[]`)
+
+- **`apps/backend-cli/tests/cli_integration_test.rs`** — Sprint 10.5.B: `extract_submittal_dry_run_is_deterministic` integration test:
+  - Runs `extract` → `index-submittal` → `extract-submittal` twice on `SUB_Rsmd_TAS_AAON-RTU.pdf`
+  - Asserts `schema_version`, `unit_count`, `record_count`, and per-unit `unit_tag` + `record_count` are identical across both runs
+
+- **`docs/WORKFLOW_EXTRACTSUBMITTAL.md`** (new) — Sprint 10.5.C:
+  - 5-step tutorial: extract → index-submittal → extract-submittal (JSON) → extract-submittal (CSV) → audit bundle
+  - Complete `TidyRow` field reference (14 columns)
+  - `EquipmentDataset` JSON schema reference block
+  - Common issues table; link to `CLI_REFERENCE.md`
+
+- **`docs/CLI_REFERENCE.md`** — Sprint 10.5.C: "Submittal subcommands (Phase 10)" section appended:
+  - `index-submittal`: flags, output JSON schema, error codes (`MISSING_OUTPUT_PATH`, `INVALID_TRANSCRIPT`)
+  - `extract-submittal`: flags (`--input`, `--index`, `--output`, `--format`, `--audit-bundle`, `--dry-run`), JSON + CSV schema, audit bundle contents, error codes (`MISSING_OUTPUT_PATH`, `MISSING_INDEX_PATH`, `INVALID_TRANSCRIPT`, `INVALID_INDEX`)
+
+### Fixed
+
+- **`crates/engine/src/drawing_segment.rs` line 126** — `||` → `&&` in title-block region filter:
+  - Before: `.filter(|s| s.bbox.y > TITLE_BLOCK_BOTTOM_Y || s.bbox.x > TITLE_BLOCK_RIGHT_X)` — matched any span in the bottom OR right band, causing spec PDF footer text (e.g. `"IBC-2021"` matching `(?i)\b([A-Za-z]{1,3})-?(\d{3,4})\b`) to be treated as a sheet ID
+  - After: `.filter(|s| s.bbox.y > TITLE_BLOCK_BOTTOM_Y && s.bbox.x > TITLE_BLOCK_RIGHT_X)` — restricts detection to the bottom-right corner only
+  - Fixes regression: `cli_index_drawing_on_non_drawing_fixture_completes_with_zero_sheets` was returning 6 sheets instead of 0
+  - Two unit tests updated:
+    - `right_side_band_detected` → `right_band_only_not_in_title_block_region` (span at x=0.80, y=0.60 — right-band-only; now **not** detected)
+    - `sheet_id_extracted_from_right_band` → `sheet_id_extracted_from_bottom_right_corner` (span moved to x=0.88, y=0.80 — both axes satisfied)
+
+### Changed
+
+- **`docs/MASTER_PLAN.md`** — Phase 10 deliverables all marked ✅; "Ready for customer validation (BETA COMPLETE)" ✅
+- **`docs/current-state/gap-register.md`** — G-028: `Closed (Sprint 10.4)`; G-029: `Partially Closed (Sprint 10.4)`
+- **`docs/current-state/capability-matrix.md`** — 4 new submittal rows (`index-submittal`, submittal KV extraction, submittal table extraction, `extract-submittal`); schedule parser + export rows updated; `tools/pattern-dev` row updated for Sprint 10.5
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| CLI integration active | 51 (Sprint 10.4) | 67 (+1 drawing regression fixed, +1 determinism test) |
+| CLI integration ignored | 5 | 5 (unchanged) |
+| Engine unit (drawing_segment) | 19/19 | 19/19 (2 tests renamed; all pass) |
+
+> Note: drawing regression fix changes net active test count from 66→67 (the previously-failing `cli_index_drawing_on_non_drawing_fixture_completes_with_zero_sheets` now passes correctly).
+
+---
+
+## [2026-04-08] Sprint 10.4 Complete: Tidy Export Pipeline + `extract-submittal` CLI
+
+### Added
+
+- **`crates/engine/src/submittal_export.rs`** (new) — Sprint 10.4.A:
+  - `build_equipment_dataset(index, tables_by_unit, kv_by_unit) -> EquipmentDataset` — assembles per-unit KV pairs and table rows into canonical `TidyRow` records; skips cover units; computes per-unit `UnitSummary`; warns when no records or avg_confidence < 0.5
+  - `dataset_to_json(dataset) -> String` — pretty-printed serde_json
+  - `dataset_to_csv(dataset) -> String` — 14-column RFC 4180 CSV with proper quoting; columns: `packet_name`, `revision_id`, `item_tag`, `equipment_type`, `section`, `field`, `value_raw`, `value_num`, `unit`, `page`, `bbox`, `confidence`, `source`, `conflict_flags`
+  - `parse_value_and_unit(raw) -> (Option<f64>, String)` — splits numeric value from trailing unit string
+  - 10 unit tests: 4 parse\_value\_and\_unit, 4 build\_dataset, 2 CSV format
+
+- **`crates/engine/src/lib.rs`** — `pub mod submittal_export;` + `pub use submittal_export::{build_equipment_dataset, dataset_to_csv, dataset_to_json};`
+
+- **`crates/contracts/src/lib.rs`** — `ExtractSubmittal` variant added to `WorkflowOperation`
+
+- **`apps/backend-cli/src/handlers/extract_submittal.rs`** (new) — reads transcript + SubmittalIndex; per-unit `extract_kv_pairs` + `extract_unit_tables`; `build_equipment_dataset`; writes JSON/CSV; optional audit bundle (`unit-report.json` + `metrics.json`). Error codes: `MISSING_OUTPUT_PATH`, `MISSING_INDEX_PATH`, `INVALID_TRANSCRIPT`, `INVALID_INDEX`
+
+- **`apps/backend-cli/src/handlers/mod.rs`** — `pub mod extract_submittal;` + `ExtractSubmittal` dispatch arm
+
+- **`apps/backend-cli/src/main.rs`** — `ExtractSubmittal { input, index, output, format, audit_bundle, dry_run }` subcommand
+
+- **`apps/backend-cli/tests/cli_integration_test.rs`** — `run_extract_submittal()` helper + 3 tests: `cli_extract_submittal_on_sub_fixture_produces_json`, `cli_extract_submittal_csv_format_produces_tabular`, `cli_extract_submittal_dry_run_skips_extraction`
+
+### Gaps Closed
+
+- **G-028 CLOSED** — `EquipmentDataset` records carry `schema_version`, `page`, `bbox`, `confidence`, `source` provenance
+- **G-029 PARTIALLY CLOSED** — JSON + CSV export; XML deferred
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| Engine unit | 157 | 167 (+10 submittal_export) |
+| CLI integration active | 48 | 51 (+3 extract-submittal) |
+
+---
+
+## [2026-04-08] Sprint 10.3 Complete: Performance-Spec Table Extraction
+
+### Added
+
+- **`crates/engine/src/submittal_tables.rs`** (new) — Sprint 10.3.A:
+  - `extract_unit_tables(pages: &[&Page], unit: &UnitEntry) -> Vec<ExtractedTable>` — table extractor adapted from Phase 9 `drawing_tables`; relaxed thresholds (`ROW_Y_EPSILON=0.018`, `COL_X_EPSILON=0.025`); multi-page table merging: continuation pages (no header row, pending table open) have their rows appended to the prior table; eager flush at `MAX_PENDING_ROWS=20`; reuses `ExtractedTable` type with `sheet_id=unit_tag`, `sheet_title=item_type`
+  - `classify_table(table_title: Option<&str>, headers: &[String]) -> SubmittalTableType` — keyword scan; `SubmittalTableType` enum: `Airflow` (CFM/ESP/RPM/static pressure), `Electrical` (volt/amp/MCA/MOP/FLA/kW), `Dimensional` (weight/dim/length/width/height/physical), `SoundData` (sound/acoust/NC/octave/Lw/Lp), `General` (fallback)
+  - 10 unit tests: empty/sparse/single-page/multi-page/merge/propagation/classify-airflow/classify-electrical/classify-dimensional/classify-general
+
+- **`crates/engine/src/lib.rs`** — Sprint 10.3.B:
+  - `pub mod submittal_tables;` added to module declarations
+  - `pub use submittal_tables::{classify_table, extract_unit_tables, SubmittalTableType};` added to re-exports
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| Engine unit | 147 | 157 (+10 submittal_tables) |
+
+---
+
+## [2026-04-08] Sprint 10.2 Complete: Per-Unit Header Extraction + Key-Value Parsing
+
+### Added
+
+- **`crates/engine/src/submittal_kv.rs`** (new) — Sprint 10.2.A:
+  - `extract_unit_header(pages: &[&Page], header_page_limit: usize) -> UnitHeader` — scans first `header_page_limit` pages for labeled field patterns (tag, model, manufacturer, equipment type); compiled `OnceLock<Regex>` patterns (`tag_re`, `model_re`, `manufacturer_re`, `type_re`); confidence bands: exact label keyword (`"Tag No."`, `"Model No."`, `"Manufacturer:"`, etc.) → 1.0; all other matches → 0.9; aggregate field confidence averaged; returns `UnitHeader` with `confidence=0.0` when no fields extracted
+  - `extract_kv_pairs(pages: &[&Page]) -> Vec<KvPair>` — colon-split heuristic across all unit pages; accepts any span containing `:`, splits at first colon; label filtered: non-empty, ≤60 chars, not URL; value: non-empty; bbox provenance from span bbox; confidence=0.7
+  - Internal helpers: `normalise_value()` (collapse whitespace), `choose_conf()` (exact vs. flex confidence selector)
+  - 8 unit tests: `header_extracts_model_from_label_colon`, `header_extracts_manufacturer_from_label`, `header_extracts_tag_from_item_tag`, `header_returns_zero_confidence_when_no_fields`, `header_respects_page_limit`, `kv_pairs_extracted_from_colon_spans`, `kv_pairs_skip_empty_value_after_colon`, `kv_pairs_page_provenance_set_correctly`
+
+- **`crates/engine/src/lib.rs`** — Sprint 10.2.B:
+  - `pub mod submittal_kv;` added to module declarations
+  - `pub use submittal_kv::{extract_kv_pairs, extract_unit_header};` added to re-exports
+
+### Changed
+
+- **`crates/engine/src/submittal_segment.rs`** — Sprint 10.2.B:
+  - `use crate::submittal_kv::extract_unit_header;` import added
+  - `build_index()`: after `build_units()`, iterates non-cover units; for each, slices pages to `unit.start_page..=unit.end_page`, calls `extract_unit_header(&unit_pages, 2)`, populates `unit.model`, `unit.manufacturer`, `unit.item_type` if not already set by prior detection
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| Engine unit | 139 | 147 (+8 submittal_kv) |
+
+---
+
+## [2026-04-08] Sprint 10.1 Complete: `SubmittalSegmentEngine` + `index-submittal` CLI
+
+### Added
+
+- **`crates/engine/src/submittal_segment.rs`** (new) — Sprint 10.1.A:
+  - Constants: `COVER_PAGE_MAX=3`, `UNIT_HEADER_MIN_FONT_RATIO=1.3`, `CONFIDENCE_HIGH=0.9`, `CONFIDENCE_LOW=0.7`, `CONFIDENCE_FALLBACK=0.3`
+  - `compute_median_font_size(transcript) -> f64` — corpus-median font size for prominence gating
+  - `detect_unit_tag_on_page(spans, median_font) -> Option<(String, f64)>` — two-pass: upper-half prominent (`y<0.5`, `font_size ≥ median × 1.3`) → anywhere prominent
+  - `extract_tag(text) -> Option<String>` — normalizes to `LETTERS-DIGITS` form via regex `(?i)\b([A-Z]{1,4})-?(\d{1,4}[A-Z]?)\b`
+  - Module-level `Accumulator` struct + `finalise(a, end_page) -> UnitEntry` helper
+  - `build_units(page_tags, total_pages) -> Vec<UnitEntry>` — state machine: cover page detection, boundary detection on tag change, fallback to single unit with confidence=0.3
+  - `SubmittalSegmentEngine::build_index(transcript, packet_name) -> SubmittalIndex`
+  - 17 unit tests: tag extraction (7), detection (3), build index (7); all pass
+
+- **`crates/contracts/src/lib.rs`** — Sprint 10.1.B:
+  - `IndexSubmittal` variant added to `WorkflowOperation` enum (after `ExtractSchedules`)
+
+- **`crates/engine/src/lib.rs`** — Sprint 10.1.C:
+  - `pub mod submittal_segment;` + `pub use submittal_segment::SubmittalSegmentEngine;`
+
+- **`apps/backend-cli/src/handlers/index_submittal.rs`** (new) — Sprint 10.1.D/E:
+  - `run(req, bundle)` handler: `packet_name_from_path()` derives packet name from file stem; dry-run short-circuit; emits `OperationStarted`/`OperationEnded` for `IndexSubmittal`; calls `SubmittalSegmentEngine::build_index()`; writes JSON to output path
+
+- **`apps/backend-cli/src/main.rs`** — Sprint 10.1.F:
+  - `IndexSubmittal { input, output, dry_run }` subcommand added to `Commands` enum; match arm wired
+
+- **`apps/backend-cli/tests/cli_integration_test.rs`** — Sprint 10.1.I:
+  - `run_index_submittal()` test helper
+  - `cli_index_submittal_on_sub_fixture_produces_valid_json` — extracts + indexes SUB_Rsmd_TAS_AAON-RTU, validates JSON structure
+  - `cli_index_submittal_dry_run_skips_extraction` — asserts no output file when `--dry-run`
+
+### Changed
+
+- **`apps/backend-cli/src/handlers/mod.rs`** — Sprint 10.1.E:
+  - `pub mod index_submittal;` + `WorkflowOperation::IndexSubmittal => index_submittal::run(req, bundle)` dispatch arm
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| Engine unit | 122 | 139 (+17 submittal_segment) |
+| CLI integration (active) | 46 | 48 (+2 index-submittal tests) |
+
+---
+
+## [2026-04-08] Sprint 10.0 Complete: IR Foundation + Corpus Analysis
+
+### Added
+
+- **`crates/ir/src/submittal.rs`** (new) — Sprint 10.0.B:
+  - `SubmittalCoverage { total_pages, assigned_pages, unassigned_pages, coverage_ratio: f64, unit_count }` — coverage statistics for a packet
+  - `UnitEntry { unit_tag, model, manufacturer, item_type, start_page, end_page, page_count, is_cover: bool, confidence: f64 }` — one detected equipment unit
+  - `SubmittalIndex { schema_version: "1.0.0", packet_name, units: Vec<UnitEntry>, coverage: SubmittalCoverage }` — full index output from Sprint 10.1 engine
+  - `TidyBBox { x, y, width, height: f64 }` — normalized bounding box for tidy rows
+  - `TidyRow` — canonical 14-field tidy schema: `packet_name`, `revision_id`, `item_tag`, `equipment_type`, `section`, `field`, `value_raw`, `value_num`, `unit`, `page`, `bbox`, `confidence`, `source`, `conflict_flags`
+  - `EquipmentDataset { schema_version, packet_name, record_count, unit_count, records: Vec<TidyRow>, unit_summaries: Vec<UnitSummary> }` — full assembled output
+  - `UnitSummary { unit_tag, record_count, avg_confidence, table_record_count, kv_record_count, warnings }` — per-unit quality roll-up
+  - All types: `#[derive(Debug, Clone, Serialize, Deserialize)]`; `schema_version` fixed to `"1.0.0"`
+  - 8 unit tests: `tidy_row_serde_round_trip_full`, `tidy_row_serde_round_trip_minimal`, `unit_entry_serde_round_trip`, `unit_entry_cover_serde_round_trip`, `submittal_index_serde_round_trip`, `equipment_dataset_serde_round_trip`, `submittal_coverage_zero_pages`, `unit_summary_default_round_trips`
+
+- **`crates/ir/src/lib.rs`** — Sprint 10.0.B:
+  - `pub mod submittal;` added to module list
+  - Re-exports: `EquipmentDataset`, `SubmittalCoverage`, `SubmittalIndex`, `TidyBBox`, `TidyRow`, `UnitEntry`, `UnitSummary`
+
+- **`apps/backend-cli/tests/cli_integration_test.rs`** — Sprint 10.0.A:
+  - `submittal_extraction_profile` `#[ignore]` benchmark: profiles all 5 tier1 SUB fixtures via `extract --dry-run`; records `wall_elapsed_ms`, `span_count`, `text_extractable`, `raster_risk` per fixture; applies decision rule (`< 5000 ms` → `full_extraction_acceptable`); writes `audit_output/phase-j-perf/sub-extraction-profile.json`
+
+- **`audit_output/phase-j-corpus-baseline/sub-pre-baseline.json`** (new) — Sprint 10.0.C:
+  - Pre-extraction baseline for 5 tier1 SUB fixtures: page counts, producers, page sizes, raster risk flags, corpus summary (702 total pages, 4 Letter + 1 non-standard, 4/5 low-risk), extraction risk assessment (overall: LOW-MEDIUM; primary risk: CARRIER-UV 331pp raster)
+
+### Changed
+
+- **`docs/MASTER_PLAN.md`** — Pre-work Task C: version bumped from `v4.9.0 (Phase 8 — Production Hardening)` to `v5.0.0 (Phase 10 — Submittal Data Extraction)`, date updated to April 8, 2026
+- **`docs/current-state/gap-register.md`** — Pre-work Task A: v2.4.0 → v2.5.0; G-013 (`Open` → `Closed`) and G-016 (`Partially unblocked` → `Closed`) with Sprint 8.2 evidence
+- **`docs/current-state/capability-matrix.md`** — Pre-work Task B: v2.3.0 → v2.4.0; "Multi-file intake bundle assembly" and "Intake Triage: page audit and rotation normalization" rows updated from `Not implemented` to `Implemented (Sprint 8.2)`
+- **`docs/current-state/state-summary.md`** — Sprint 10.0 block added; test baseline table updated (IR 42 → 50; CLI ignored count 4 → 5)
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| IR unit | 42 | 50 (+8 submittal serde) |
+| CLI integration (active) | 46 | 46 (unchanged) |
+| CLI integration (ignored) | 4 | 5 (+1 SUB extraction profile benchmark) |
+
 ## [2026-04-11] Sprint 9.5 Complete + DoD Row 8 Closure: DWG Corpus Validation + Drawing Docs + Production-Run Test
 
 ### Added

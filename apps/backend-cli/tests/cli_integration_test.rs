@@ -3458,3 +3458,570 @@ fn cli_apply_sheet_addendum_production_run_writes_output_pdf() {
     );
 }
 
+// ── Sprint 10.0.A — Submittal extraction profiling ────────────────────────────
+
+/// Extraction profiling benchmark for all 5 Tier 1 SUB (submittal) corpus fixtures.
+///
+/// Records per-fixture wall-clock extraction time, page count, text quality
+/// score, and a decision record for the full-extraction vs. range-bounded
+/// extraction trade-off.  Results written to:
+///   `audit_output/phase-j-perf/sub-extraction-profile.json`
+///
+/// The CARRIER UV fixture (331 pp, non-standard page size, no producer) is the
+/// stress case — if extraction wall time exceeds 10 s, document the raster risk
+/// in the record rather than failing the test.
+///
+/// Requires `cargo build --bin backend-cli` and access to the Tier 1 corpus.
+/// Skipped in normal CI via `#[ignore]`.
+#[test]
+#[ignore]
+fn submittal_extraction_profile() {
+    struct Fixture {
+        filename: &'static str,
+        pages: u32,
+        notes: &'static str,
+    }
+
+    let fixtures = [
+        Fixture { filename: "SUB_CrowTrk_CMS_TRANE-RTU.pdf",  pages: 136, notes: "Trane RTU, Word/M365 producer, vector"          },
+        Fixture { filename: "SUB_LHHS_MCMJ_CARRIER-UV.pdf",   pages: 331, notes: "Carrier UV, no producer, non-standard size, raster risk" },
+        Fixture { filename: "SUB_PESH_BERG_TRANE-AHU.pdf",    pages: 74,  notes: "Trane AHU, iText producer, vector"              },
+        Fixture { filename: "SUB_PESH_BERG_TRANE-RTU.pdf",    pages: 109, notes: "Trane RTU, iText producer, vector"              },
+        Fixture { filename: "SUB_Rsmd_TAS_AAON-RTU.pdf",      pages: 52,  notes: "AAON RTU, Adobe PDF Library, vector"            },
+    ];
+
+    let perf_dir = repo_root().join("audit_output").join("phase-j-perf");
+    std::fs::create_dir_all(&perf_dir).ok();
+
+    let mut per_fixture: Vec<serde_json::Value> = Vec::new();
+
+    for fx in &fixtures {
+        let pdf = tier1(fx.filename);
+        assert!(
+            pdf.exists(),
+            "SUB corpus fixture missing — cannot profile: {}",
+            pdf.display()
+        );
+
+        let tmp = tmp_dir(&format!("sub-extraction-profile-{}", fx.filename));
+        let transcript_json = tmp.join("transcript.json");
+
+        // Measure wall time around full extraction.
+        let wall_start = std::time::Instant::now();
+        let response = run_extract(&pdf, &transcript_json);
+        let wall_elapsed_ms = wall_start.elapsed().as_millis() as u64;
+
+        let succeeded = response["result"]["status"].as_str().unwrap_or("") == "succeeded";
+        let extract_ms = response["result"]["diagnostics"]["elapsed_ms"]
+            .as_u64()
+            .unwrap_or(wall_elapsed_ms);
+
+        // Read text quality metrics from transcript if extraction succeeded.
+        let (span_count, text_extractable) = if succeeded && transcript_json.exists() {
+            let txt = std::fs::read_to_string(&transcript_json).unwrap_or_default();
+            if let Ok(t) = serde_json::from_str::<serde_json::Value>(&txt) {
+                let pages = t["pages"].as_array().map(|p| p.len()).unwrap_or(0);
+                let spans: usize = t["pages"]
+                    .as_array()
+                    .map(|ps| {
+                        ps.iter()
+                            .map(|p| p["spans"].as_array().map(|s| s.len()).unwrap_or(0))
+                            .sum()
+                    })
+                    .unwrap_or(0);
+                (spans, pages > 0)
+            } else {
+                (0, false)
+            }
+        } else {
+            (0, false)
+        };
+
+        // Decision rule per ARCHITECTURE.md §Known Design Constraints, Constraint 1:
+        // < 5,000 ms → full extraction acceptable for Phase 10.
+        // ≥ 5,000 ms → range-bounded extraction should be considered.
+        let decision = if wall_elapsed_ms < 5_000 {
+            "full_extraction_acceptable"
+        } else {
+            "range_bounded_extraction_recommended"
+        };
+
+        let raster_risk = !text_extractable || span_count < (fx.pages as usize * 2);
+
+        println!(
+            "[sub-profile] {} ({} pp): extract={}ms  wall={}ms  spans={}  raster_risk={}  decision={}",
+            fx.filename, fx.pages, extract_ms, wall_elapsed_ms, span_count, raster_risk, decision
+        );
+
+        per_fixture.push(serde_json::json!({
+            "fixture":         fx.filename,
+            "expected_pages":  fx.pages,
+            "notes":           fx.notes,
+            "succeeded":       succeeded,
+            "extract_elapsed_ms": extract_ms,
+            "wall_elapsed_ms": wall_elapsed_ms,
+            "span_count":      span_count,
+            "text_extractable": text_extractable,
+            "raster_risk":     raster_risk,
+            "decision":        decision,
+        }));
+    }
+
+    // Overall decision: require all non-raster fixtures to be fast.
+    let all_fast = per_fixture.iter().all(|f| {
+        let raster = f["raster_risk"].as_bool().unwrap_or(false);
+        let ms     = f["wall_elapsed_ms"].as_u64().unwrap_or(u64::MAX);
+        raster || ms < 5_000
+    });
+    let phase10_decision = if all_fast {
+        "full_extraction_acceptable_for_phase10"
+    } else {
+        "range_bounded_extraction_needed_for_phase10"
+    };
+
+    let record = serde_json::json!({
+        "sprint": "10.0.A",
+        "phase":  "phase-j",
+        "date":   chrono::Utc::now().to_rfc3339(),
+        "note":   "SUB fixture extraction profiling. Raster-risk fixtures (span_count < 2*pages) may trigger graceful-degradation path in Sprint 10.1.",
+        "architecture_constraint": "ARCHITECTURE.md §Known Design Constraints, Constraint 1",
+        "decision": phase10_decision,
+        "fixtures": per_fixture,
+    });
+
+    let record_path = perf_dir.join("sub-extraction-profile.json");
+    std::fs::write(&record_path, serde_json::to_string_pretty(&record).unwrap() + "\n")
+        .expect("write sub-extraction-profile.json");
+    println!("[sub-profile] record written to {}", record_path.display());
+    println!("[sub-profile] phase10_decision = {phase10_decision}");
+}
+
+// ── Sprint 10.1 — index-submittal subcommand tests ────────────────────────────
+
+/// Run `backend-cli index-submittal --input <transcript_json> --output <out_json>`.
+/// Returns the parsed `WorkflowResponse` JSON.
+fn run_index_submittal(transcript_json: &PathBuf, out_json: &PathBuf) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(
+        transcript_json.exists(),
+        "transcript JSON not found: {}",
+        transcript_json.display()
+    );
+
+    let output = std::process::Command::new(&exe)
+        .arg("index-submittal")
+        .arg("--input")
+        .arg(transcript_json)
+        .arg("--output")
+        .arg(out_json)
+        .output()
+        .expect("failed to spawn backend-cli index-submittal");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "index-submittal exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    serde_json::from_str(&stdout).expect("stdout must be valid WorkflowResponse JSON")
+}
+
+/// `index-submittal` on a real SUB fixture must produce a valid `SubmittalIndex`
+/// JSON with `schema_version = "1.0.0"`, a well-formed coverage block, and at
+/// least one unit entry (cover or equipment).
+///
+/// Uses `SUB_Rsmd_TAS_AAON-RTU.pdf` — the highest-confidence SUB tier-1 fixture.
+/// The test: extract → index-submittal → parse output → assert structure.
+#[test]
+fn cli_index_submittal_on_sub_fixture_produces_valid_json() {
+    let pdf = tier1("SUB_Rsmd_TAS_AAON-RTU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("index-submittal-aaon");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index.json");
+
+    // Step 1: extract transcript.
+    run_extract(&pdf, &transcript_json);
+
+    // Step 2: run index-submittal.
+    let response = run_index_submittal(&transcript_json, &index_json);
+
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "index-submittal must succeed on SUB fixture; response: {:?}",
+        response["result"]
+    );
+
+    // Step 3: parse and validate SubmittalIndex structure.
+    assert!(index_json.exists(), "index-submittal must write --output file");
+    let index_text = std::fs::read_to_string(&index_json).expect("read submittal-index.json");
+    let index: serde_json::Value =
+        serde_json::from_str(&index_text).expect("submittal-index.json must be valid JSON");
+
+    assert_eq!(
+        index["schema_version"].as_str().unwrap_or(""),
+        "1.0.0",
+        "schema_version must be 1.0.0"
+    );
+
+    // packet_name must be non-empty.
+    let packet_name = index["packet_name"].as_str().unwrap_or("");
+    assert!(!packet_name.is_empty(), "packet_name must not be empty");
+
+    // coverage block must be present with valid fields.
+    let coverage = &index["coverage"];
+    let total_pages = coverage["total_pages"].as_u64().unwrap_or(0);
+    assert!(total_pages > 0, "coverage.total_pages must be > 0 for a real PDF");
+
+    let coverage_ratio = coverage["coverage_ratio"].as_f64().unwrap_or(-1.0);
+    assert!(
+        (0.0..=1.0).contains(&coverage_ratio),
+        "coverage_ratio must be in [0.0, 1.0]; got {coverage_ratio}"
+    );
+
+    // units array must be present and non-empty.
+    let units = index["units"].as_array().expect("units must be an array");
+    assert!(!units.is_empty(), "units array must not be empty for a real SUB PDF");
+
+    // Every unit must have a non-empty unit_tag and valid page range.
+    for (i, unit) in units.iter().enumerate() {
+        let tag = unit["unit_tag"].as_str().unwrap_or("");
+        assert!(!tag.is_empty(), "units[{i}].unit_tag must not be empty");
+
+        let start = unit["start_page"].as_u64().unwrap_or(u64::MAX);
+        let end = unit["end_page"].as_u64().unwrap_or(0);
+        assert!(
+            start <= end,
+            "units[{i}] start_page({start}) must be <= end_page({end})"
+        );
+
+        let conf = unit["confidence"].as_f64().unwrap_or(-1.0);
+        assert!(
+            (0.0..=1.0).contains(&conf),
+            "units[{i}].confidence must be in [0.0, 1.0]; got {conf}"
+        );
+    }
+}
+
+/// `index-submittal --dry-run` must return `succeeded` without writing any output
+/// file, validating that the dry-run short-circuit works correctly.
+#[test]
+fn cli_index_submittal_dry_run_skips_extraction() {
+    let pdf = tier1("SUB_PESH_BERG_TRANE-AHU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("index-submittal-dry-run");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index-dry.json");
+
+    // Extract transcript (required as input path even for dry run).
+    run_extract(&pdf, &transcript_json);
+
+    let exe = backend_cli_exe_path();
+    let output = std::process::Command::new(&exe)
+        .arg("index-submittal")
+        .arg("--input")
+        .arg(&transcript_json)
+        .arg("--output")
+        .arg(&index_json)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli index-submittal --dry-run");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "index-submittal --dry-run must exit 0;\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let response: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid WorkflowResponse JSON");
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "dry-run must report succeeded"
+    );
+
+    // The output file must NOT be written in dry-run mode.
+    assert!(
+        !index_json.exists(),
+        "index-submittal --dry-run must NOT write the output file"
+    );
+}
+
+
+// ── Sprint 10.4 — extract-submittal subcommand tests ─────────────────────────
+
+/// Run `backend-cli extract-submittal --input <t> --index <i> --output <o>`.
+/// Returns the parsed `WorkflowResponse` JSON.
+fn run_extract_submittal(
+    transcript_json: &PathBuf,
+    index_json: &PathBuf,
+    out_path: &PathBuf,
+    format: &str,
+) -> serde_json::Value {
+    let exe = backend_cli_exe_path();
+    assert!(exe.exists(), "backend-cli not found — run: cargo build --bin backend-cli");
+    assert!(
+        transcript_json.exists(),
+        "transcript JSON not found: {}",
+        transcript_json.display()
+    );
+    assert!(
+        index_json.exists(),
+        "submittal index JSON not found: {}",
+        index_json.display()
+    );
+
+    let output = std::process::Command::new(&exe)
+        .arg("extract-submittal")
+        .arg("--input")
+        .arg(transcript_json)
+        .arg("--index")
+        .arg(index_json)
+        .arg("--output")
+        .arg(out_path)
+        .arg("--format")
+        .arg(format)
+        .output()
+        .expect("failed to spawn backend-cli extract-submittal");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "extract-submittal exited non-zero:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    serde_json::from_str(&stdout).expect("stdout must be valid WorkflowResponse JSON")
+}
+
+/// `extract-submittal` on a real SUB fixture must produce a valid
+/// `EquipmentDataset` JSON with `schema_version = "1.0.0"`, `records` array,
+/// and `unit_summaries` array.
+///
+/// Pipeline: extract → index-submittal → extract-submittal → parse JSON output.
+#[test]
+fn cli_extract_submittal_on_sub_fixture_produces_json() {
+    let pdf = tier1("SUB_Rsmd_TAS_AAON-RTU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("extract-submittal-json");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index.json");
+    let dataset_json = tmp.join("equipment-dataset.json");
+
+    // Step 1: extract transcript.
+    run_extract(&pdf, &transcript_json);
+
+    // Step 2: index-submittal.
+    run_index_submittal(&transcript_json, &index_json);
+
+    // Step 3: extract-submittal.
+    let response =
+        run_extract_submittal(&transcript_json, &index_json, &dataset_json, "json");
+
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "extract-submittal must succeed; response: {:?}",
+        response["result"]
+    );
+
+    // Step 4: validate output file.
+    assert!(dataset_json.exists(), "extract-submittal must write --output file");
+    let text = std::fs::read_to_string(&dataset_json).expect("read equipment-dataset.json");
+    let dataset: serde_json::Value =
+        serde_json::from_str(&text).expect("equipment-dataset.json must be valid JSON");
+
+    assert_eq!(
+        dataset["schema_version"].as_str().unwrap_or(""),
+        "1.0.0",
+        "schema_version must be 1.0.0"
+    );
+
+    assert!(
+        dataset["records"].is_array(),
+        "records must be a JSON array"
+    );
+
+    let unit_summaries = dataset["unit_summaries"].as_array().expect("unit_summaries must be array");
+    assert!(!unit_summaries.is_empty(), "unit_summaries must not be empty");
+
+    // Every unit summary must have a non-empty unit_tag and valid record_count.
+    for (i, summary) in unit_summaries.iter().enumerate() {
+        let tag = summary["unit_tag"].as_str().unwrap_or("");
+        assert!(!tag.is_empty(), "unit_summaries[{i}].unit_tag must not be empty");
+
+        let rc = summary["record_count"].as_u64().unwrap_or(u64::MAX);
+        assert!(rc < u64::MAX, "unit_summaries[{i}].record_count must be present");
+    }
+}
+
+/// `extract-submittal --format csv` must produce a plain-text file whose
+/// first line is the 14-column CSV header.
+#[test]
+fn cli_extract_submittal_csv_format_produces_tabular() {
+    let pdf = tier1("SUB_Rsmd_TAS_AAON-RTU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("extract-submittal-csv");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index.json");
+    let dataset_csv = tmp.join("equipment-dataset.csv");
+
+    run_extract(&pdf, &transcript_json);
+    run_index_submittal(&transcript_json, &index_json);
+
+    let response =
+        run_extract_submittal(&transcript_json, &index_json, &dataset_csv, "csv");
+
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "extract-submittal --format csv must succeed; response: {:?}",
+        response["result"]
+    );
+
+    assert!(dataset_csv.exists(), "extract-submittal must write --output file");
+    let text = std::fs::read_to_string(&dataset_csv).expect("read equipment-dataset.csv");
+
+    let first_line = text.lines().next().unwrap_or("");
+    assert_eq!(
+        first_line.split(',').count(),
+        14,
+        "CSV header must have exactly 14 columns; got: {first_line}"
+    );
+    assert!(
+        first_line.contains("packet_name"),
+        "CSV header must contain 'packet_name'"
+    );
+    assert!(
+        first_line.contains("item_tag"),
+        "CSV header must contain 'item_tag'"
+    );
+    assert!(
+        first_line.contains("source"),
+        "CSV header must contain 'source'"
+    );
+}
+
+/// `extract-submittal --dry-run` must return `succeeded` without writing any
+/// output file.
+#[test]
+fn cli_extract_submittal_dry_run_skips_extraction() {
+    let pdf = tier1("SUB_PESH_BERG_TRANE-AHU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("extract-submittal-dry-run");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index.json");
+    let dataset_json = tmp.join("equipment-dataset-dry.json");
+
+    run_extract(&pdf, &transcript_json);
+
+    let exe = backend_cli_exe_path();
+    let output = std::process::Command::new(&exe)
+        .arg("extract-submittal")
+        .arg("--input")
+        .arg(&transcript_json)
+        .arg("--index")
+        .arg(&index_json)
+        .arg("--output")
+        .arg(&dataset_json)
+        .arg("--dry-run")
+        .output()
+        .expect("failed to spawn backend-cli extract-submittal --dry-run");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "extract-submittal --dry-run must exit 0;\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let response: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be valid WorkflowResponse JSON");
+    assert_eq!(
+        response["result"]["status"].as_str().unwrap_or(""),
+        "succeeded",
+        "dry-run must report succeeded"
+    );
+
+    assert!(
+        !dataset_json.exists(),
+        "extract-submittal --dry-run must NOT write the output file"
+    );
+}
+
+/// Running `extract-submittal` twice on the same fixture must produce identical
+/// `schema_version`, `unit_count`, and per-unit `record_count` values,
+/// confirming that the extraction pipeline is deterministic.
+///
+/// Sprint 10.5.B.
+#[test]
+fn extract_submittal_dry_run_is_deterministic() {
+    let pdf = tier1("SUB_Rsmd_TAS_AAON-RTU.pdf");
+    assert!(pdf.exists(), "SUB tier-1 fixture must exist");
+
+    let tmp = tmp_dir("extract-submittal-determinism");
+    let transcript_json = tmp.join("transcript.json");
+    let index_json = tmp.join("submittal-index.json");
+
+    // Set up shared transcript and index once (deterministic inputs).
+    run_extract(&pdf, &transcript_json);
+    run_index_submittal(&transcript_json, &index_json);
+
+    // ── Run 1 ─────────────────────────────────────────────────────────────────
+    let dataset_run1 = tmp.join("dataset-run1.json");
+    run_extract_submittal(&transcript_json, &index_json, &dataset_run1, "json");
+
+    // ── Run 2 ─────────────────────────────────────────────────────────────────
+    let dataset_run2 = tmp.join("dataset-run2.json");
+    run_extract_submittal(&transcript_json, &index_json, &dataset_run2, "json");
+
+    // ── Compare fields ────────────────────────────────────────────────────────
+    let text1 = std::fs::read_to_string(&dataset_run1).expect("read dataset-run1.json");
+    let text2 = std::fs::read_to_string(&dataset_run2).expect("read dataset-run2.json");
+    let ds1: serde_json::Value = serde_json::from_str(&text1).expect("dataset-run1.json must be valid JSON");
+    let ds2: serde_json::Value = serde_json::from_str(&text2).expect("dataset-run2.json must be valid JSON");
+
+    assert_eq!(
+        ds1["schema_version"], ds2["schema_version"],
+        "schema_version must be identical across runs"
+    );
+
+    assert_eq!(
+        ds1["unit_count"], ds2["unit_count"],
+        "unit_count must be identical across runs"
+    );
+
+    assert_eq!(
+        ds1["record_count"], ds2["record_count"],
+        "record_count must be identical across runs"
+    );
+
+    // Per-unit record_count must also match.
+    let sums1 = ds1["unit_summaries"].as_array().expect("unit_summaries must be array (run 1)");
+    let sums2 = ds2["unit_summaries"].as_array().expect("unit_summaries must be array (run 2)");
+    assert_eq!(
+        sums1.len(),
+        sums2.len(),
+        "unit_summaries length must be identical across runs"
+    );
+    for (i, (s1, s2)) in sums1.iter().zip(sums2.iter()).enumerate() {
+        assert_eq!(
+            s1["unit_tag"], s2["unit_tag"],
+            "unit_summaries[{i}].unit_tag must be identical across runs"
+        );
+        assert_eq!(
+            s1["record_count"], s2["record_count"],
+            "unit_summaries[{i}].record_count must be identical across runs"
+        );
+    }
+}

@@ -1,6 +1,6 @@
 # Conset PDF: Master Plan
-**Version:** 4.9.0 (Phase 8 — Production Hardening)  
-**Date:** April 7, 2026  
+**Version:** 5.0.0 (Phase 10 — Submittal Data Extraction)  
+**Date:** April 8, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ Ready for Implementation  
 **Doc Status Tag:** Implemented
@@ -1445,17 +1445,20 @@ cargo run -- apply-addendum \
 **Goal:** Extract structured data from equipment submittals.
 
 **Deliverables:**
-- ☐ Unit boundary detection
-- ☐ Table extraction (performance specs)
-- ☐ Key-value extraction (tags, models)
-- ☐ CSV/JSON export (tidy format)
-- ☐ Integration tests
+- ✅ Unit boundary detection (`SubmittalSegmentEngine`, Sprint 10.1)
+- ✅ Table extraction (performance specs, Sprint 10.3)
+- ✅ Key-value extraction (tags, models, Sprint 10.2)
+- ✅ CSV/JSON export (tidy format, Sprint 10.4)
+- ✅ Integration tests (66 active, 5 ignored)
+- ✅ Corpus validation pipeline (`--pipeline submittal-extract`, Sprint 10.5.A)
+- ✅ Determinism test (`extract_submittal_dry_run_is_deterministic`, Sprint 10.5.B)
+- ✅ CLI_REFERENCE + WORKFLOW_EXTRACTSUBMITTAL.md (Sprint 10.5.C)
 
 **Definition of Done:**
-- Submittal extraction works on 5 real submittals
-- Data exported in tidy format
-- Confidence scores accurate
-- **Ready for customer validation (BETA COMPLETE)**
+- ✅ Submittal extraction works on 5 real submittals
+- ✅ Data exported in tidy format
+- ✅ Confidence scores accurate
+- ✅ **Ready for customer validation (BETA COMPLETE)**
 
 ---
 

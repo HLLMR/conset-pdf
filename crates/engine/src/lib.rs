@@ -33,6 +33,10 @@ pub mod render;
 pub mod segment;
 pub mod specs_patch;
 pub mod stitch;
+pub mod submittal_export;
+pub mod submittal_kv;
+pub mod submittal_segment;
+pub mod submittal_tables;
 pub mod visualize;
 pub mod visualize_ast;
 
@@ -47,3 +51,7 @@ pub use processor::Processor;
 pub use render::SectionRenderer;
 pub use specs_patch::SpecsPatchOrchestrator;
 pub use stitch::PdfStitcher;
+pub use submittal_export::{build_equipment_dataset, dataset_to_csv, dataset_to_json};
+pub use submittal_kv::{extract_kv_pairs, extract_unit_header};
+pub use submittal_segment::SubmittalSegmentEngine;
+pub use submittal_tables::{classify_table, extract_unit_tables, SubmittalTableType};

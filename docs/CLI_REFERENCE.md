@@ -476,3 +476,141 @@ backend-cli extract-schedules --input <TRANSCRIPT_JSON> --output <SCHEDULES_JSON
 | `INVALID_TRANSCRIPT` | Cannot read or parse the transcript JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `extract`. |
 | `SERIALISE_ERROR` | Internal error serialising the table output. | Memory or encoding issue (extremely rare). | File a bug with `result.summary` and the input PDF. |
 
+---
+
+## Submittal subcommands (Phase 10)
+
+The following subcommands are specific to AEC mechanical/electrical submittal PDFs.
+
+### `index-submittal`
+
+Build a `SubmittalIndex` JSON from a `LayoutTranscript` produced by `extract`.
+The index identifies unit boundaries, cover pages, unit tags, model numbers,
+and manufacturer names.
+
+```
+backend-cli index-submittal --input <TRANSCRIPT_JSON> --output <INDEX_JSON> [--dry-run]
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `--input <JSON>` | yes | Path to a `LayoutTranscript` JSON (produced by `extract`). |
+| `--output <JSON>` | yes | Path for the output `SubmittalIndex` JSON. |
+| `--dry-run` | no | Validate arguments only; skip indexing. |
+
+**Output:** `SubmittalIndex` JSON at `--output` with schema:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "packet_name": "SUB_Rsmd_TAS_AAON-RTU",
+  "unit_count": 3,
+  "units": [
+    {
+      "unit_tag": "RTU-1",
+      "start_page": 0,
+      "end_page": 4,
+      "page_count": 5,
+      "is_cover": false,
+      "item_type": "Rooftop Unit",
+      "model": "RN-025-3-0",
+      "manufacturer": "AAON"
+    }
+  ]
+}
+```
+
+`result.summary` reports `Indexed N unit(s) from P pages`.
+
+### `extract-submittal`
+
+Extract equipment data from a submittal PDF into a tidy `EquipmentDataset`.
+Reads a `LayoutTranscript` and a `SubmittalIndex`, then assembles per-unit
+key-value pairs and performance-table rows into a structured output file.
+
+```
+backend-cli extract-submittal \
+  --input <TRANSCRIPT_JSON> \
+  --index <INDEX_JSON> \
+  --output <DATASET_JSON|CSV> \
+  [--format json|csv] \
+  [--audit-bundle <DIR>] \
+  [--dry-run]
+```
+
+| Argument | Required | Description |
+|---|---|---|
+| `--input <JSON>` | yes | Path to a `LayoutTranscript` JSON (produced by `extract`). |
+| `--index <JSON>` | yes | Path to a `SubmittalIndex` JSON (produced by `index-submittal`). |
+| `--output <FILE>` | yes | Output path for the `EquipmentDataset` JSON or CSV. |
+| `--format <FMT>` | no | `json` (default) or `csv`. |
+| `--audit-bundle <DIR>` | no | Directory for `unit-report.json` and `metrics.json`. |
+| `--dry-run` | no | Validate arguments only; skip extraction. |
+
+**JSON output** (`--format json`) schema:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "packet_name": "SUB_Rsmd_TAS_AAON-RTU",
+  "unit_count": 3,
+  "record_count": 47,
+  "unit_summaries": [
+    {
+      "unit_tag": "RTU-1",
+      "record_count": 18,
+      "kv_record_count": 12,
+      "table_record_count": 6,
+      "avg_confidence": 0.87,
+      "warnings": []
+    }
+  ],
+  "records": [
+    {
+      "schema_version": "1.0.0",
+      "packet_name": "SUB_Rsmd_TAS_AAON-RTU",
+      "revision_id": "",
+      "item_tag": "RTU-1",
+      "equipment_type": "Rooftop Unit",
+      "section": "",
+      "field": "Cooling Capacity",
+      "value_raw": "25 tons",
+      "value_num": 25.0,
+      "unit": "tons",
+      "page": 1,
+      "bbox": "0.10,0.45,0.60,0.02",
+      "confidence": 0.92,
+      "source": "kv"
+    }
+  ]
+}
+```
+
+**CSV output** (`--format csv`): 14-column RFC 4180 CSV with header row:
+
+```
+packet_name,revision_id,item_tag,equipment_type,section,field,value_raw,value_num,unit,page,bbox,confidence,source,schema_version
+```
+
+**Audit bundle** (when `--audit-bundle <DIR>` is provided):
+- `unit-report.json` — per-unit record counts, average confidence, warnings
+- `metrics.json` — total records, elapsed_ms, schema_version
+
+`result.summary` reports `Extracted N record(s) from U unit(s) (format: json|csv)`.
+
+### `index-submittal` error codes
+
+| Code | Meaning | Most likely cause | What to check |
+|---|---|---|---|
+| `MISSING_OUTPUT_PATH` | `--output` was not provided. | CLI invocation is missing the flag. | Add `--output <JSON>` to the command. |
+| `INVALID_TRANSCRIPT` | Cannot read or parse the transcript JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `extract`. |
+
+### `extract-submittal` error codes
+
+| Code | Meaning | Most likely cause | What to check |
+|---|---|---|---|
+| `MISSING_OUTPUT_PATH` | `--output` was not provided. | CLI invocation is missing the flag. | Add `--output <FILE>` to the command. |
+| `MISSING_INDEX_PATH` | `--index` was not provided. | CLI invocation is missing the flag. | Add `--index <JSON>` to the command. |
+| `INVALID_TRANSCRIPT` | Cannot read or parse the transcript JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `extract`. |
+| `INVALID_INDEX` | Cannot read or parse the submittal index JSON. | File not found, not readable, or invalid JSON. | Check the path and verify the file was produced by `index-submittal`. |
+

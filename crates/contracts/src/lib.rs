@@ -114,6 +114,10 @@ pub enum WorkflowOperation {
     ApplySheetAddendum,
     /// Extract schedule tables from a drawing-set PDF.
     ExtractSchedules,
+    /// Build a `SubmittalIndex` JSON from a submittal PDF transcript.
+    IndexSubmittal,
+    /// Extract tidy equipment data from a submittal PDF transcript + index.
+    ExtractSubmittal,
 }
 
 /// Per-request optional context used by execution and audit pipelines.

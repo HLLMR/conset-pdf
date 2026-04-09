@@ -29,6 +29,7 @@ pub mod layout;
 pub mod render;
 pub mod segment;
 pub mod stitch;
+pub mod submittal;
 pub mod types;
 pub mod validation;
 
@@ -52,6 +53,10 @@ pub use drawing::{
     SheetRenameEvent, SheetReplaceSpec,
 };
 pub use stitch::{StitchError, StitchPlan, StitchResult};
+pub use submittal::{
+    EquipmentDataset, KvPair, SubmittalCoverage, SubmittalIndex, TidyBBox, TidyRow, UnitEntry,
+    UnitHeader, UnitSummary,
+};
 pub use types::{BBox, BBoxError, BoundingBox, Document, Element, Page, Span, SpanError};
 pub use validation::{
     normalize_bbox, sort_spans, validate_transcript, NormalizationError, ValidationError, Validator,

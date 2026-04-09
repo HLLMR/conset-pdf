@@ -11,7 +11,9 @@ pub mod apply_sheet_addendum;
 pub mod edit;
 pub mod extract;
 pub mod extract_schedules;
+pub mod extract_submittal;
 pub mod index_drawing;
+pub mod index_submittal;
 pub mod intake;
 pub mod parse;
 pub mod regenerate;
@@ -41,6 +43,8 @@ pub fn dispatch(req: &WorkflowRequest, bundle: &mut AuditBundle) -> WorkflowResp
         WorkflowOperation::VisualizeAst => visualize_ast::run(req, bundle),
         WorkflowOperation::Intake => intake::run(req, bundle),
         WorkflowOperation::IndexDrawing => index_drawing::run(req, bundle),
+        WorkflowOperation::IndexSubmittal => index_submittal::run(req, bundle),
+        WorkflowOperation::ExtractSubmittal => extract_submittal::run(req, bundle),
         WorkflowOperation::ApplySheetAddendum => apply_sheet_addendum::run(req, bundle),
         WorkflowOperation::ExtractSchedules => extract_schedules::run(req, bundle),
         _ => not_implemented(req, bundle),

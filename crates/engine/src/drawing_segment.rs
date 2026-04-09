@@ -123,7 +123,7 @@ fn extract_sheet_from_page(spans: &[Span]) -> (Option<String>, String) {
     // Collect spans in the candidate title-block region.
     let candidates: Vec<&Span> = spans
         .iter()
-        .filter(|s| s.bbox.y > TITLE_BLOCK_BOTTOM_Y || s.bbox.x > TITLE_BLOCK_RIGHT_X)
+        .filter(|s| s.bbox.y > TITLE_BLOCK_BOTTOM_Y && s.bbox.x > TITLE_BLOCK_RIGHT_X)
         .collect();
 
     if candidates.is_empty() {
@@ -365,9 +365,9 @@ mod tests {
 
     #[test]
     fn title_block_region_detected_on_synthetic_page() {
-        // A span at (x=0.85, y=0.90) is in the title-block region.
+        // A span at (x=0.85, y=0.90) is in the bottom-right title-block corner.
         let span = make_span("M-201", 0.85, 0.90);
-        let in_region = span.bbox.y > TITLE_BLOCK_BOTTOM_Y || span.bbox.x > TITLE_BLOCK_RIGHT_X;
+        let in_region = span.bbox.y > TITLE_BLOCK_BOTTOM_Y && span.bbox.x > TITLE_BLOCK_RIGHT_X;
         assert!(in_region, "span at (0.85, 0.90) should be in title-block region");
     }
 
@@ -384,11 +384,13 @@ mod tests {
     }
 
     #[test]
-    fn right_side_band_detected() {
-        // Span at (x=0.90, y=0.40) — in right band, not bottom band.
+    fn right_band_only_not_in_title_block_region() {
+        // Span at (x=0.90, y=0.40) — right band but NOT bottom band.
+        // Title-block detection requires BOTH bottom AND right (bottom-right corner only);
+        // a right-band-only span should NOT be considered part of the title block.
         let span = make_span("FP-101", 0.90, 0.40);
-        let in_region = span.bbox.y > TITLE_BLOCK_BOTTOM_Y || span.bbox.x > TITLE_BLOCK_RIGHT_X;
-        assert!(in_region, "span at right x=0.90 should be in region even at mid y=0.40");
+        let in_region = span.bbox.y > TITLE_BLOCK_BOTTOM_Y && span.bbox.x > TITLE_BLOCK_RIGHT_X;
+        assert!(!in_region, "right-band-only span (y=0.40) must NOT be in title-block region");
     }
 
     // ── 9.1.B tests: sheet ID extraction ─────────────────────────────────────
@@ -404,9 +406,11 @@ mod tests {
     }
 
     #[test]
-    fn sheet_id_extracted_from_right_band() {
+    fn sheet_id_extracted_from_bottom_right_corner() {
+        // Right-band-only spans (y not in bottom region) no longer detected.
+        // Sheet IDs must be in the bottom-right corner (both y > 0.75 and x > 0.75).
         let spans = vec![
-            make_span("FP-101", 0.88, 0.30),  // right band
+            make_span("FP-101", 0.88, 0.80),  // bottom-right corner
         ];
         let (id, _) = extract_sheet_from_page(&spans);
         assert_eq!(id.as_deref(), Some("FP-101"));

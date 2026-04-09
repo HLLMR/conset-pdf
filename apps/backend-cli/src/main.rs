@@ -225,6 +225,24 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Build a submittal unit index from a submittal PDF transcript JSON.
+    ///
+    /// Reads a `LayoutTranscript` JSON (produced by `extract`) of an equipment
+    /// submittal PDF and detects unit boundaries by locating unit-tag spans
+    /// (e.g. `AHU-1`, `RTU-3`) in prominent upper-page regions.  Produces a
+    /// `SubmittalIndex` JSON with per-unit page ranges, cover detection, and
+    /// coverage statistics.
+    IndexSubmittal {
+        /// Path to the input transcript JSON (produced by `extract`).
+        #[arg(short, long)]
+        input: String,
+        /// Path for the output SubmittalIndex JSON.
+        #[arg(short, long)]
+        output: Option<String>,
+        /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Apply a drawing addendum manifest to replace sheets in a drawing-set PDF.
     ///
     /// Reads a `DrawingAddendumManifest` JSON that specifies the original drawing
@@ -262,6 +280,33 @@ enum Commands {
         #[arg(long, default_value = "json")]
         format: String,
         /// Validate arguments only; skip all processing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Extract tidy equipment data from a submittal PDF transcript + unit index.
+    ///
+    /// Reads a `LayoutTranscript` JSON (produced by `extract`) and a
+    /// `SubmittalIndex` JSON (produced by `index-submittal`), performs per-unit
+    /// KV pair and performance table extraction, and writes the assembled
+    /// `EquipmentDataset` to `--output` in JSON or CSV format.
+    ExtractSubmittal {
+        /// Path to the input transcript JSON (produced by `extract`).
+        #[arg(short, long)]
+        input: String,
+        /// Path to the `SubmittalIndex` JSON (produced by `index-submittal`).
+        #[arg(long)]
+        index: String,
+        /// Path for the output `EquipmentDataset` (JSON or CSV).
+        #[arg(short, long)]
+        output: String,
+        /// Output format: `json` (default) or `csv`.
+        #[arg(long, default_value = "json")]
+        format: String,
+        /// Optional directory for audit bundle artifacts (`unit-report.json`,
+        /// `metrics.json`).
+        #[arg(long)]
+        audit_bundle: Option<String>,
+        /// Validate arguments only; skip all extraction.
         #[arg(long)]
         dry_run: bool,
     },
@@ -397,6 +442,9 @@ fn main() -> Result<()> {
         Commands::IndexDrawing { input, output, dry_run } => {
             (WorkflowOperation::IndexDrawing, input.clone(), output.clone(), *dry_run, vec![])
         }
+        Commands::IndexSubmittal { input, output, dry_run } => {
+            (WorkflowOperation::IndexSubmittal, input.clone(), output.clone(), *dry_run, vec![])
+        }
         Commands::ApplySheetAddendum { manifest, output, audit_bundle, dry_run } => {
             let mut meta = vec![
                 KeyValuePair { key: "manifest_path".to_owned(), value: manifest.clone() },
@@ -413,6 +461,25 @@ fn main() -> Result<()> {
         }
         Commands::ExtractSchedules { input, output, format: _, dry_run } => {
             (WorkflowOperation::ExtractSchedules, input.clone(), output.clone(), *dry_run, vec![])
+        }
+        Commands::ExtractSubmittal { input, index, output, format, audit_bundle, dry_run } => {
+            let mut meta = vec![
+                KeyValuePair { key: "index_path".to_owned(), value: index.clone() },
+                KeyValuePair { key: "format".to_owned(), value: format.clone() },
+            ];
+            if let Some(dir) = audit_bundle {
+                meta.push(KeyValuePair {
+                    key: "audit_bundle_dir".to_owned(),
+                    value: dir.clone(),
+                });
+            }
+            (
+                WorkflowOperation::ExtractSubmittal,
+                input.clone(),
+                Some(output.clone()),
+                *dry_run,
+                meta,
+            )
         }
     };
 
