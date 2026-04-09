@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "resources": {
+      "../../../target/release/backend-cli.exe": "backend-cli.exe",
+      "../../../target/release/backend-cli": "backend-cli",
+      "../../../pdfium.dll": "pdfium.dll"
+    }
+  }
+}

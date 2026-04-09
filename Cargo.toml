@@ -9,6 +9,7 @@ members = [
     "crates/standards-data",
     "apps/backend-cli",
     "apps/desktop-gui",
+    "apps/desktop-gui/src-tauri",
     "tools",
 ]
 resolver = "2"

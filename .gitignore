@@ -3,6 +3,11 @@
 **/*.rs.bk
 debug.log
 
+# Node.js / frontend build artifacts
+node_modules/
+apps/desktop-gui/dist/
+apps/desktop-gui/src/bindings.ts
+
 # PDF test fixtures (managed by Git LFS)
 *.pdf
 !tests/corpus/*.pdf

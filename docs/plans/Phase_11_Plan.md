@@ -978,11 +978,11 @@ Before Phase 11 is marked BETA COMPLETE, verify:
 
 | Row | Criterion | Sprint | Status |
 |---|---|---|---|
-| 1 | Tauri window opens; test IPC round-trip works (NOT_IMPLEMENTED → stub response) | 11.0 | ☐ |
-| 1b | Tauri v2 plugins (dialog, shell, fs) registered; `cargo check --workspace` clean | 11.0 | ☐ |
-| 1c | First-run probe: missing binary shows setup dialog before any operation | 11.0 | ☐ |
-| 1d | `backend-cli` + PDFium bundled in resources; `backend_cli_path()` resolves at runtime | 11.0 | ☐ |
-| 1e | Vitest + invoke mock: `npm test` exits 0 (empty suite passes) | 11.0 | ☐ |
+| 1 | Tauri window opens; test IPC round-trip works (NOT_IMPLEMENTED → stub response) | 11.0 | ✅ |
+| 1b | Tauri v2 plugins (dialog, shell, fs) registered; `cargo check --workspace` clean | 11.0 | ✅ |
+| 1c | First-run probe: missing binary shows setup dialog before any operation | 11.0 | ✅ |
+| 1d | `backend-cli` + PDFium bundled in resources; `backend_cli_path()` resolves at runtime | 11.0 | ✅ |
+| 1e | Vitest + invoke mock: `npm test` exits 0 (empty suite passes) | 11.0 | ✅ |
 | 2 | Session state machine: all 13 transitions tested, all pass (incl. ManifestDraft path) | 11.1 | ☐ |
 | 2b | `specta` bindings auto-generated; `src/bindings.ts` is canonical TS type source | 11.1 | ☐ |
 | 3 | All 9 Tauri commands wired to subprocess backend; cmd_extract dry-run test passes | 11.2 | ☐ |
@@ -1063,7 +1063,7 @@ These open gaps from the gap register affect Phase 11. They are categorized by i
 
 ```
 Pre-work  (0.25d): state-summary.md + capability-matrix.md cleanup                         ✅
-Sprint 11.0 (2d):  Tauri shell + scaffold + IPC + plugins + probe + bundling + test infra   ☐
+Sprint 11.0 (2d):  Tauri shell + scaffold + IPC + plugins + probe + bundling + test infra   ✅
 Sprint 11.1 (1.5d): Session state model (IR types + ManifestDraft + specta bindings)        ☐
 Sprint 11.2 (2d):  Tauri command layer + subprocess integration + lifecycle management       ☐
 Sprint 11.3 (3d):  Lane 1A: File picker + workflow selection + Manifest Assistant + progress events  ☐
