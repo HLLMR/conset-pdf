@@ -105,6 +105,7 @@ pub struct BoundingBox {
 ///
 /// This follows the `TRANSCRIPT_ARCHITECTURE` v4.2 invariants for coordinate systems.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct BBox {
     /// Left edge of the bounding box, normalized to [0.0, 1.0].
     pub x: f64,

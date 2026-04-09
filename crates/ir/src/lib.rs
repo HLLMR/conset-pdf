@@ -28,6 +28,7 @@ pub mod edit;
 pub mod layout;
 pub mod render;
 pub mod segment;
+pub mod session;
 pub mod stitch;
 pub mod submittal;
 pub mod types;
@@ -53,6 +54,13 @@ pub use drawing::{
     SheetRenameEvent, SheetReplaceSpec,
 };
 pub use stitch::{StitchError, StitchPlan, StitchResult};
+pub use session::{
+    add_files, begin_segment_analysis, complete_with_result, confirm_review_item,
+    confirm_workflow, export_complete, load_manifest, reset, segment_analysis_complete,
+    skip_review_item, start_processing, update_progress, DetectedSection, ExportSummary,
+    FileEntry, ManifestRef, ProgressState, ReviewItem, ReviewItemStatus, SessionState,
+    WorkflowResult, WorkflowType,
+};
 pub use submittal::{
     EquipmentDataset, KvPair, SubmittalCoverage, SubmittalIndex, TidyBBox, TidyRow, UnitEntry,
     UnitHeader, UnitSummary,

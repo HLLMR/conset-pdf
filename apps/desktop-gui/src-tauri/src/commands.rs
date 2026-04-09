@@ -14,17 +14,17 @@ use crate::backend_process;
 // Supplementary types for commands not covered by WorkflowRequest/Response
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct FileFilter {
     pub name: String,
     pub extensions: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ManifestValidationResult {
     pub valid: bool,
     pub errors: Vec<String>,
-    pub sections_targeted: usize,
+    pub sections_targeted: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +191,7 @@ pub fn cmd_visualize(
 
 /// Stub — open-file-dialog; real implementation wires tauri-plugin-dialog on the TS side.
 /// This command exists so the TypeScript invoke surface is complete and typed.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_open_file_dialog(
     _title: String,
@@ -202,6 +203,7 @@ pub fn cmd_open_file_dialog(
 }
 
 /// Stub — save-file-dialog; real implementation wires tauri-plugin-dialog on the TS side.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_save_file_dialog(
     _title: String,
@@ -219,6 +221,7 @@ pub fn cmd_save_file_dialog(
 /// Checks that all `section_id` values exist in the detected segment index and
 /// that operation types / required fields are present and well-formed.
 /// Lives here (not in engine) because it only parses JSON — no PDFium needed.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_validate_manifest(
     manifest_json: String,
@@ -238,7 +241,7 @@ fn validate_manifest_inner(
     let index: Value = serde_json::from_str(segment_index_json)?;
 
     let mut errors: Vec<String> = Vec::new();
-    let mut sections_targeted: usize = 0;
+    let mut sections_targeted: u32 = 0;
 
     // Collect known section IDs from the segment index.
     let known_ids: std::collections::HashSet<String> = index

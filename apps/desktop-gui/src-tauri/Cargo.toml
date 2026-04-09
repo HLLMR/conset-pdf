@@ -30,3 +30,7 @@ serde_json = "1"
 
 # Workspace contracts (IPC boundary — no engine import)
 conset-pdf-contracts = { path = "../../../crates/contracts" }
+conset-pdf-ir = { path = "../../../crates/ir", features = ["specta"] }
+specta = "=2.0.0-rc.22"
+tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.9"
