@@ -1,7 +1,7 @@
 # Conset PDF: Architecture
 
-**Version:** 4.9.0  
-**Date:** April 8, 2026  
+**Version:** 5.1.0  
+**Date:** April 11, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ✅ ACTIVE  
 **Doc Status Tag:** Implemented
@@ -174,11 +174,12 @@ This is a canonical derived document under `MASTER_PLAN.md` per `DOC_GOVERNANCE.
 
 ### Current Implementation Snapshot (April 2026)
 
-- `apps/backend-cli` is the primary executable surface; handles extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast, stitch, **apply-addendum** commands with typed audit bundles. All 10 handlers emit `OperationStarted`/`OperationEnded` audit events.
-- `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers.
-- `crates/engine` exposes working pipeline stages through Phase 7: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation engine (`segment.rs`) fully operational with section title extraction, parse engine (`parse.rs`) producing hierarchical 5-level AST with inject_missing_parts recovery and per-node `x_indent` + per-section `SectionLayout` geometry capture, edit engine (`edit.rs`) applying insert/delete/replace operations with CSI-canonical renumbering, render pipeline (`render/`) converting `SectionAst` → HTML fragment (with inline margin-left from measured geometry) → full HTML with CSS `@page` margin boxes and measured font-size/line-height → PDF bytes via Chromium subprocess, stitch engine (`stitch.rs`) — `PdfStitcher::stitch()` replacing target section pages in the original PDF via lopdf, and **specs-patch orchestrator** (`specs_patch.rs`) — `SpecsPatchOrchestrator::run()` orchestrating end-to-end apply-addendum workflow with Extract → Segment → Parse → Edit → Render → Stitch pipeline, partial-success semantics, and 3-level chrome metadata merge.
-- `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction.
-- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, Phase 5 render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`), Phase 6 stitch types (`StitchPlan`, `StitchResult`, `StitchError`), and **Phase 7 addendum types** (`AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`); `Span` carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced.
+- `apps/backend-cli` is the primary executable surface; handles 16 subcommands: extract, segment, parse, edit, regenerate, visualize, visualize-segments, visualize-ast, stitch, apply-addendum, intake, index-drawing, apply-sheet-addendum, extract-schedules, index-submittal, extract-submittal — with typed audit bundles. All handlers emit `OperationStarted`/`OperationEnded` audit events. 67 integration tests active (5 ignored).
+- `apps/desktop-gui` exists with command stubs and stable contracts-shaped handlers. Full GUI implementation is Phase 11.
+- `crates/engine` exposes working pipeline stages through Phase 10: extraction wired (`extraction.rs`), validation wired (`parsing.rs`), segmentation (`segment.rs`) with section title extraction, parse (`parse.rs`) with 5-level AST + `SectionLayout` geometry, edit (`edit.rs`) with CSI-canonical renumbering, render pipeline (`render/`) with Chrome subprocess, stitch (`stitch.rs`) via lopdf, **specs-patch orchestrator** (`specs_patch.rs`) for end-to-end apply-addendum, intake triage (`intake.rs`), **drawing management** (`drawing_segment.rs`, `drawings_patch.rs`, `drawing_tables.rs`) for sheet segmentation/replacement/schedule extraction, and **submittal extraction** (`submittal_segment.rs`, `submittal_kv.rs`, `submittal_tables.rs`, `submittal_export.rs`) for unit boundary detection, KV/table parsing, and tidy CSV/JSON export.
+- `crates/pdf-extraction` has working document/page loading and text extraction primitives with real PDFium span extraction, including `font_weight` and `is_italic` from PDFium font API.
+- `crates/ir` types present for `LayoutTranscript`, `SegmentIndex`, `ParsedDocument` ASTs (including `AstNode.x_indent` and `SectionAst.layout: Option<SectionLayout>` geometry with `body_font_name`), `EditOperation`/`EditRequest`, render types (`SpecChromeMetadata`, `RenderConfig`, `RenderResult`, `RenderError`), stitch types (`StitchPlan`, `StitchResult`, `StitchError`), addendum types (`AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`), **Phase 9 drawing types** (`DrawingIndex`, `SheetEntry`, `DrawingAddendumManifest`, `DrawingPatchResult`), and **Phase 10 submittal types** (`SubmittalIndex`, `UnitEntry`, `TidyRow`, `EquipmentDataset`, `UnitSummary`, `KvPair`); `Span` carries `font_weight: f64` (measured from PDFium) and `is_italic: bool`; validation enforced. 50 unit tests.
+- `crates/standards-data` has `classify_sheet()` (UDS discipline classification, 33 unit tests) and MasterFormat lookup operational.
 - `crates/audit` models and persistence implemented; all handlers emit audit events (G-006 closed).
 - **lopdf 0.40.0** is wired as the write backend for PDF stitching; **Chrome/Brave discovery** is operational for section regeneration; `rust-version` bumped to 1.85 in the workspace `Cargo.toml` to satisfy MSRV.
 
@@ -309,7 +310,7 @@ conset-pdf/
 - `load_document(path)`
 - `get_page_count(document)`
 - `extract_text(document, page_index)`
-- `extract_page(...)` (currently scaffold-level)
+- `extract_page(...)` — returns real `PageData` with `Vec<SpanData>` (text, font name, font size, font weight, is_italic, `RawBBox`), `width_pts`, `height_pts`
 
 **Critical:** Crash containment, memory caps, safe failure modes.
 
@@ -337,7 +338,7 @@ conset-pdf/
 
 **Responsibility:** AEC-specific classification logic (UDS, MasterFormat).
 
-**Current state:** Dataset crate is present; incremental implementation remains in progress.
+**Current state:** `classify_sheet()` implemented with full UDS single-letter and multi-letter alias mapping; 33 unit tests (Sprint 9.0). `classify_section_id()` for MasterFormat division lookup operational.
 
 **Source of Truth:** Implements AEC_STANDARDS
 
@@ -347,7 +348,7 @@ conset-pdf/
 
 **Responsibility:** Utility binaries for repo-level operations.
 
-**Current state:** `classify_pdf.rs` utility is present.
+**Current state:** `pattern_dev.rs` (`pattern-dev` binary) is the primary developer tool — `inspect`, `test-pattern`, `validate-corpus` subcommands; supports `--pipeline segment|parse|drawing-segment|submittal-extract` modes; 3-pipeline corpus validation across spec/drawing/submittal fixture sets. `classify_pdf.rs` is a secondary utility.
 
 ---
 
@@ -1215,13 +1216,14 @@ These integration outcomes are canonical architectural constraints derived from 
 | 4.2.6 | 2026-03-23 | Added architecture constraints for replayable corrections and instruction DSL, provenance-first operational review, privacy/redaction controls, batch queueing/resume, standards normalization on existing canonical scaffold, cross-document entity resolution, and project knowledge indexing. |
 | 4.9.0 | 2026-04-08 | Added Known Design Constraints section: Constraint 1 — full-document extraction per operation (O(n\_pages) cost model, Phase 9 mitigation path for range-bounded extraction). Added Sprint 8.4 benchmark baseline. |
 | 5.0.0 | 2026-04-11 | Phase 9 Drawing Sheet Management complete. `DrawingSegmentEngine` (keyword-anchor span-density sheet detection, `build_index()`, `SheetEntry` IR); `DrawingsPatchOrchestrator` (multi-step stitch chain with rename detection, bookmark generation, dry-run + production modes); `apply-sheet-addendum`, `index-drawing`, `extract-schedules` CLI subcommands; `extract_tables_from_sheet()` schedule extraction; DWG corpus validation pass (drawing-segment pipeline); `WORKFLOW_APPLYSHEETADDENDUM.md` user guide. DoD row 8 (production-path integration test) deferred — see `docs/plans/Phase_9_Plan.md`. |
+| 5.1.0 | 2026-04-11 | Phase 10 Submittal Data Extraction complete. `SubmittalSegmentEngine` (cover-page detection, unit boundary state machine); `extract_kv_pairs` + `extract_unit_header` (colon-split label/value + header model/manufacturer/tag); `extract_unit_tables` + `classify_table` (performance-spec table extraction across 5 table types); `build_equipment_dataset` + `dataset_to_json` + `dataset_to_csv` (14-column `TidyRow` tidy export, `schema_version="1.0.0"`); `index-submittal` + `extract-submittal` CLI subcommands; G-028 closed; G-029 partially closed (XML deferred); submittals corpus validation pass (`--pipeline submittal-extract`); drawing regression fix (`drawing_segment.rs` `||`→`&&` in title-block region filter); `WORKFLOW_EXTRACTSUBMITTAL.md` user guide. Current snapshot: 67 active integration tests + 5 ignored. |
 
 ---
 
 **Status:** ✅ ACTIVE  
 **Owner:** HLLMR LLC  
 **Last Updated:** April 11, 2026  
-**Version:** 5.0.0
+**Version:** 5.1.0
 
 ---
 

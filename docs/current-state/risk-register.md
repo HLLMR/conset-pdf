@@ -1,7 +1,7 @@
 # Risk Register
 
-**Version:** 1.6.0  
-**Date:** April 6, 2026  
+**Version:** 1.7.0  
+**Date:** April 11, 2026  
 **Owner:** HLLMR LLC  
 **Status:** ACTIVE  
 **Doc Status Tag:** Implemented
@@ -26,7 +26,7 @@ Active project risks with severity, owner, mitigation, and decision date.
 | R-012 | Local micro-ML confidence assist could introduce non-reproducible outcomes if model versions or preprocessing drift across environments. | High | Engineering lead | Enforce G-024/G-025 with fixed model artifact hashing, deterministic preprocessing, and audit logging of fusion inputs/outputs per decision. | 2026-03-23 | Open |
 | R-013 | Power-user LLM API usage may leak sensitive project data or produce over-trusted hallucinated instructions. | High | Security owner | Enforce G-026 with explicit opt-in, payload minimization/redaction, advisory default, and mandatory user promotion to executable instruction manifests. | 2026-03-23 | Open |
 | R-014 | OCR path may degrade extraction quality on noisy raster scans, causing false positives in downstream parsing and segmentation. | Medium | Architecture owner | Implement G-027 confidence thresholds, review gating, and mixed-source (`ocr` vs `vector`) provenance-aware parsing rules. | 2026-03-23 | Open |
-| R-015 | Schedule schema instability across JSON/CSV/XML exports may break downstream integrations. | Medium | Product owner | Implement G-028/G-029 with canonical schema versioning, compatibility tests, and explicit deprecation policy for field changes. | 2026-03-23 | Open |
+| R-015 | Schedule schema instability across JSON/CSV/XML exports may break downstream integrations. | Medium | Product owner | Implement G-028/G-029 with canonical schema versioning, compatibility tests, and explicit deprecation policy for field changes. | 2026-03-23 | **Partially mitigated (Sprint 10.4)** — G-028 closed: `TidyRow`/`EquipmentDataset` schema locked at `1.0.0` (D-035). G-029 XML adapter deferred. JSON + CSV exports have compatibility tests. Monitor for field-change drift. |
 | R-016 | Replaying correction manifests onto later revisions may apply valid-looking but semantically wrong fixes if scope guards are weak. | High | Engineering lead | Implement G-030 with target identity checks, divergence detection, dry-run preview, and explicit operator approval on replay drift. | 2026-03-23 | Open |
 | R-017 | Privacy/redaction failures on external API paths may expose sensitive drawing/spec content beyond intended scope. | Critical | Security owner | Implement G-033 with payload manifests, policy-enforced region redaction, privacy modes, and outbound audit logging before any external request path ships. | 2026-03-23 | Open |
 | R-018 | Batch orchestration/resume logic may create inconsistent partial state or duplicate mutations across retries. | High | Engineering lead | Implement G-034 with idempotent job state transitions, resumable checkpoints, and explicit mutation markers per file/page. | 2026-03-23 | Open |

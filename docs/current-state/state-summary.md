@@ -58,17 +58,10 @@ This file summarizes where Conset PDF stands now, what is complete, and what is 
 
 ## Next Focus
 
-- **Phase 10 (Submittal Data Extraction)** can begin — all Phase 9 DoD rows are satisfied.
-  - **Submittals** — Extract structured data from equipment submittals: unit boundary detection, table extraction (performance specs), key-value extraction (tags, models), CSV/JSON export.
-  - **See:** `docs/MASTER_PLAN.md` Phase 10 section for the full deliverable list.
-
-
-  - **IR types:** `crates/ir/src/addendum.rs` — `AddendumManifest`, `SectionEditSpec`, `SectionPatchStatus`, `SectionPatchResult`, `AddendumResult`; 12 new unit tests.
-  - **Orchestrator:** `crates/engine/src/specs_patch.rs` — `SpecsPatchOrchestrator::run()` — Extract → Segment → Parse → Edit → Render → Stitch (last-to-first); partial-success semantics; chrome metadata merge (base + manifest override + per-section override); 5 unit tests.
-  - **Handler:** `apps/backend-cli/src/handlers/apply_addendum.rs` — loads addendum manifest, delegates to orchestrator, writes audit bundle.
-  - **CLI:** `apply-addendum` subcommand — `--original`, `--addendum`, `--output` (optional), `--audit-bundle` (optional), `--dry-run`.
-  - **Integration tests:** 5 non-Chrome tests pass (dry-run, missing-original, missing-manifest, unknown-section continues, audit artifacts); 1 Chrome test `#[ignore]`.
-  - **Test baseline:** 41/41 CLI integration (36 pre-Phase-7 + 5 Phase-7), **77/77** engine unit (65 pre-Phase-7 + 5 specs_patch + 7 prior), 30/30 IR unit. See `CHANGELOG.md`.
+- **Phase 11 (Desktop GUI)** can begin — Phase 10 is CLOSED. All CLI pipeline capabilities are production-ready.
+  - **GUI Target:** Tauri v2 + React 18 + TypeScript + Vite desktop application.
+  - **IPC Model:** `#[tauri::command]` handlers spawn `backend-cli` subprocess; GUI depends on `crates/contracts` only.
+  - **See:** `docs/plans/Phase_11_Plan.md` for the full sprint plan, DoD table, and gate conditions.
 
 - **Sprint 8.1 COMPLETE (April 7, 2026):** Crash containment, error hardening, structured diagnostics pipeline.
   - Panic audit: zero panics reachable from valid-but-corrupt PDF input (`unwrap()`/`expect()` replaced with `Result` propagation).

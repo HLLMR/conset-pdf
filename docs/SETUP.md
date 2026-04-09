@@ -26,7 +26,7 @@ For workflow-style operations, use analyze-first execution patterns where availa
 ### Required Software
 
 1. **Rust Toolchain**
-   - Version: 1.82 or later
+   - Version: 1.85 or later
    - Install: https://rustup.rs/
    - Verify: `rustc --version`
 

@@ -61,13 +61,16 @@ Current-state library:
 
 User workflow guides and CLI reference:
 
-- `docs/CLI_REFERENCE.md` — Full CLI reference for all `backend-cli` subcommands (Phase 8.7 + Phase 9 drawing sections: `index-drawing`, `apply-sheet-addendum`, `extract-schedules`)
+- `docs/CLI_REFERENCE.md` — Full CLI reference for all `backend-cli` subcommands (Phase 8.7 + Phase 9 drawing sections: `index-drawing`, `apply-sheet-addendum`, `extract-schedules` + Phase 10 submittal sections: `index-submittal`, `extract-submittal`)
 - `docs/WORKFLOW_APPLYADDENDUM.md` — End-to-end spec-book addendum workflow tutorial (`apply-addendum`, Phase 8.7)
 - `docs/WORKFLOW_APPLYSHEETADDENDUM.md` — End-to-end drawing sheet addendum workflow tutorial (`apply-sheet-addendum`, Sprint 9.5.C)
+- `docs/WORKFLOW_EXTRACTSUBMITTAL.md` — End-to-end submittal data extraction workflow tutorial (`extract-submittal`, Sprint 10.5.C)
 
 Phase plans:
 
 - `docs/plans/Phase_9_Plan.md` — Phase 9 Drawing Sheet Management: sprint structure, DoD table, delivered capabilities; all Sprints 9.0–9.5 complete with one known open gap (DoD row 8)
+- `docs/plans/Phase_10_Plan.md` — Phase 10 Submittal Data Extraction: sprint structure, DoD table, delivered capabilities; all Sprints 10.0–10.5 complete; Phase 10 CLOSED
+- `docs/plans/Phase_11_Plan.md` — Phase 11 Desktop GUI (Tauri v2 + React): pre-work, sprint structure, IPC architecture, DoD table; in progress
 
 ---
 
