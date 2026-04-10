@@ -50,6 +50,7 @@ pub struct WorkflowRequest {
 
 /// Response envelope returned by workflow runners.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct WorkflowResponse {
     pub request_id: String,
     pub session_id: String,
@@ -81,6 +82,7 @@ impl WorkflowResponse {
 
 /// Workflow operations currently supported by orchestration layers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowOperation {
     Extract,
@@ -130,6 +132,7 @@ pub struct WorkflowOptions {
 
 /// Canonical operation result payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct OperationResult {
     pub status: OperationStatus,
     pub summary: String,
@@ -140,6 +143,7 @@ pub struct OperationResult {
 
 /// High-level terminal status for a workflow operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum OperationStatus {
     Succeeded,
@@ -149,6 +153,7 @@ pub enum OperationStatus {
 
 /// Named outputs produced by a workflow operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct OutputArtifact {
     pub kind: String,
     pub path: String,
@@ -163,6 +168,7 @@ pub struct KeyValuePair {
 
 /// Aggregate operation counts required for session end logging (M-003).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct OperationCounts {
     pub total: u32,
     pub succeeded: u32,
@@ -172,6 +178,7 @@ pub struct OperationCounts {
 
 /// Behavior class for feature gates and deprecation gates.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum GateBehavior {
     HardFail,
@@ -180,6 +187,7 @@ pub enum GateBehavior {
 
 /// Evaluated state of a gate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum GateOutcome {
     Allowed,
@@ -189,6 +197,7 @@ pub enum GateOutcome {
 
 /// Canonical audit event payloads aligned to Phase D migration M-003.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuditEventData {
     SessionStarted {

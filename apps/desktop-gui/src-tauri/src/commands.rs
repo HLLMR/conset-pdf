@@ -6,9 +6,11 @@
 //! - Return types serialize cleanly to JSON for the TypeScript caller.
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 
-use crate::backend_process;
+use conset_pdf_contracts::WorkflowResponse;
+
+use crate::backend_process::{self, AppState};
 
 // ---------------------------------------------------------------------------
 // Supplementary types for commands not covered by WorkflowRequest/Response
@@ -32,68 +34,82 @@ pub struct ManifestValidationResult {
 // ---------------------------------------------------------------------------
 
 /// Run `backend-cli extract` on a single PDF.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_extract(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     output: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     backend_process::run_backend(
         &app,
+        &state,
         &["extract", "--input", &input, "--output", &output],
     )
 }
 
 /// Run `backend-cli segment` on an extracted transcript.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_segment(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     output: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     backend_process::run_backend(
         &app,
+        &state,
         &["segment", "--input", &input, "--output", &output],
     )
 }
 
 /// Run `backend-cli index-drawing` on a drawing transcript.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_index_drawing(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     output: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     backend_process::run_backend(
         &app,
+        &state,
         &["index-drawing", "--input", &input, "--output", &output],
     )
 }
 
 /// Run `backend-cli index-submittal` on a submittal transcript.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_index_submittal(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     output: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     backend_process::run_backend(
         &app,
+        &state,
         &["index-submittal", "--input", &input, "--output", &output],
     )
 }
 
 /// Run the full `backend-cli apply-addendum` pipeline (extract + edit + stitch internally).
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_apply_addendum(
     app: AppHandle,
+    state: State<AppState>,
     original: String,
     addendum: String,
     output: String,
     audit_bundle: String,
     dry_run: bool,
     progress_events: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     let mut args = vec![
         "apply-addendum",
         "--input",
@@ -111,19 +127,21 @@ pub fn cmd_apply_addendum(
     if progress_events {
         args.push("--progress-events");
     }
-    backend_process::run_backend(&app, &args)
+    backend_process::run_backend(&app, &state, &args)
 }
 
 /// Run the full `backend-cli apply-sheet-addendum` pipeline (extract + index + stitch internally).
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_apply_sheet_addendum(
     app: AppHandle,
+    state: State<AppState>,
     manifest: String,
     output: String,
     audit_bundle: String,
     dry_run: bool,
     progress_events: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     let mut args = vec![
         "apply-sheet-addendum",
         "--manifest",
@@ -139,20 +157,22 @@ pub fn cmd_apply_sheet_addendum(
     if progress_events {
         args.push("--progress-events");
     }
-    backend_process::run_backend(&app, &args)
+    backend_process::run_backend(&app, &state, &args)
 }
 
 /// Run `backend-cli extract-submittal` to export structured submittal data.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_extract_submittal(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     index: String,
     output: String,
     format: String,
     audit_bundle: String,
     dry_run: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     let mut args = vec![
         "extract-submittal",
         "--input",
@@ -169,20 +189,38 @@ pub fn cmd_extract_submittal(
     if dry_run {
         args.push("--dry-run");
     }
-    backend_process::run_backend(&app, &args)
+    backend_process::run_backend(&app, &state, &args)
 }
 
 /// Run `backend-cli visualize` to generate per-page span-detection PNG overlays.
+#[specta::specta]
 #[tauri::command]
 pub fn cmd_visualize(
     app: AppHandle,
+    state: State<AppState>,
     input: String,
     output_dir: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<WorkflowResponse, String> {
     backend_process::run_backend(
         &app,
+        &state,
         &["visualize", "--input", &input, "--output", &output_dir],
     )
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle commands
+// ---------------------------------------------------------------------------
+
+/// Cancel the active backend-cli subprocess, if any.
+///
+/// The frontend calls this when the user confirms the "cancel and close"
+/// confirmation dialog that appears when close is requested while processing.
+/// Safe to call when no operation is in progress (no-op).
+#[specta::specta]
+#[tauri::command]
+pub fn cmd_cancel_operation(state: State<AppState>) {
+    backend_process::kill_active_child(&state);
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,65 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-12] Sprint 11.2 Complete: Tauri Command Layer + Backend Process Integration
+
+### Added
+
+- **`apps/desktop-gui/src-tauri/src/backend_process.rs`** — upgraded `run_backend()` to return typed `WorkflowResponse` (not raw `serde_json::Value`); now accepts `&AppState` parameter so the child handle is tracked for lifecycle management; added `run_backend_streaming()` stub (delegates to `run_backend` until Sprint 11.3 `--progress-events` CLI flag lands); added `kill_active_child()` to kill + reap active subprocess
+
+- **`apps/desktop-gui/src-tauri/src/commands.rs`** — all 8 workflow commands (`cmd_extract`, `cmd_segment`, `cmd_index_drawing`, `cmd_index_submittal`, `cmd_apply_addendum`, `cmd_apply_sheet_addendum`, `cmd_extract_submittal`, `cmd_visualize`) upgraded from `Result<serde_json::Value, String>` to `Result<WorkflowResponse, String>` and annotated with `#[specta::specta]`; added `cmd_cancel_operation` lifecycle command
+
+- **`apps/desktop-gui/src-tauri/src/lib.rs`** — `specta_builder()` now includes all 12 typed commands (previously only 3); improved `CloseRequested` handler comments to document the frontend confirm-and-exit pattern
+
+- **`apps/desktop-gui/src-tauri/tests/backend_integration_test.rs`** — 2 new integration tests: `cmd_extract_dry_run_returns_success` (real CLI invocation on tier-1 fixture), `cmd_apply_addendum_missing_file_returns_error` (bogus paths → `Failed` status)
+
+- **`crates/contracts/Cargo.toml`** — optional `specta = "=2.0.0-rc.22"` dependency + `specta` feature gate
+
+- **`crates/contracts/src/lib.rs`** — `#[cfg_attr(feature = "specta", derive(specta::Type))]` on all `WorkflowResponse` reachable types: `WorkflowResponse`, `WorkflowOperation`, `OperationResult`, `OperationStatus`, `OutputArtifact`, `OperationCounts`, `GateBehavior`, `GateOutcome`, `AuditEventData`
+
+### Changed
+
+- **`apps/desktop-gui/src-tauri/Cargo.toml`** — `conset-pdf-contracts` dependency now uses `features = ["specta"]`
+
+### Test Delta
+
+| Suite | Before | After |
+|---|---|---|
+| src-tauri unit | 3 | 8 (+4 backend_process lifecycle, +1 state init) |
+| src-tauri integration | 0 | 2 (new backend_integration_test.rs) |
+
+---
+
+## [2026-04-12] Sprint 11.1 Complete: Session State Model + ManifestDraft + Specta Bindings
+
+### Added
+
+- **`crates/ir/src/session.rs`** — 10 types (`WorkflowType`, `FileEntry`, `ManifestRef`, `ProgressState`, `ReviewItemStatus`, `ReviewItem`, `WorkflowResult`, `ExportSummary`, `DetectedSection`, `SessionState` with 7 variants), 12 pure transition functions, 17 unit tests; `specta::Type` derive on all IPC-boundary types (feature-gated)
+
+- **`apps/desktop-gui/src-tauri/src/bin/gen_bindings.rs`** — standalone binary: `cargo run --bin gen_bindings` writes `apps/desktop-gui/src/bindings.ts`
+
+- **`apps/desktop-gui/src/bindings.ts`** — generated TypeScript bindings (gitignored); includes all 3 typed commands + session + IR types; auto-regenerated on dev-mode app boot
+
+### Changed
+
+- **`crates/ir/src/lib.rs`** — `pub mod session;` + full re-exports of session types and transition functions
+- **`crates/ir/src/types.rs`** — `BBox` has `#[cfg_attr(feature = "specta", derive(specta::Type))]`
+- **`crates/ir/Cargo.toml`** — optional `specta = "=2.0.0-rc.22"` dependency + specta feature
+- **`apps/desktop-gui/src-tauri/Cargo.toml`** — added `conset-pdf-ir` (specta feature), `tauri-specta`, `specta`, `specta-typescript`
+- **`apps/desktop-gui/src-tauri/src/lib.rs`** — `specta_builder()`, auto-export bindings in debug builds
+- **`apps/desktop-gui/src-tauri/src/commands.rs`** — `FileFilter`, `ManifestValidationResult` have `specta::Type`; `sections_targeted` changed `usize` → `u32`; `#[specta::specta]` on 3 typed commands
+
+---
+
+## [2026-04-11] Sprint 11.0 Complete: Tauri Shell + React Scaffold
+
+### Added
+
+- **`apps/desktop-gui/src-tauri/`** — full Tauri v2 binary with IPC, plugin wiring, subprocess lifecycle scaffold, startup probe, bundling config, and test infra
+- **`apps/desktop-gui/src/`** — React 18 + Vite 6 frontend scaffold; smoke test passes (3 Vitest tests)
+
+---
+
 ## [2026-04-11] Sprint 10.5 Complete: Corpus Validation + Determinism + Documentation
 
 ### Added

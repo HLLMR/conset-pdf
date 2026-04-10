@@ -12,19 +12,30 @@ use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 use tauri_specta::{collect_commands, Builder as SpectaBuilder};
 
 use commands::{
-    cmd_apply_addendum, cmd_apply_sheet_addendum, cmd_extract, cmd_extract_submittal,
-    cmd_index_drawing, cmd_index_submittal, cmd_open_file_dialog, cmd_save_file_dialog,
-    cmd_segment, cmd_validate_manifest, cmd_visualize,
+    cmd_apply_addendum, cmd_apply_sheet_addendum, cmd_cancel_operation, cmd_extract,
+    cmd_extract_submittal, cmd_index_drawing, cmd_index_submittal, cmd_open_file_dialog,
+    cmd_save_file_dialog, cmd_segment, cmd_validate_manifest, cmd_visualize,
 };
 
 /// Builds the typed specta command collection.
 ///
-/// Only commands with fully typed (specta-compatible) return types are included here.
-/// Commands returning raw `serde_json::Value` are wired via `generate_handler!` below.
+/// All commands with fully typed (specta-compatible) return types are included
+/// here.  Previously, the 8 workflow commands returned raw `serde_json::Value`
+/// and were excluded; now that they return `WorkflowResponse` (which has a
+/// `specta::Type` impl) they are all included.
 ///
 /// Shared between the live app and the `gen-bindings` binary.
 pub fn specta_builder() -> SpectaBuilder<tauri::Wry> {
     SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![
+        cmd_extract,
+        cmd_segment,
+        cmd_index_drawing,
+        cmd_index_submittal,
+        cmd_apply_addendum,
+        cmd_apply_sheet_addendum,
+        cmd_extract_submittal,
+        cmd_visualize,
+        cmd_cancel_operation,
         cmd_open_file_dialog,
         cmd_save_file_dialog,
         cmd_validate_manifest,
@@ -61,6 +72,7 @@ pub fn run() {
             cmd_apply_addendum,
             cmd_apply_sheet_addendum,
             cmd_extract_submittal,
+            cmd_cancel_operation,
             cmd_open_file_dialog,
             cmd_save_file_dialog,
             cmd_validate_manifest,
@@ -95,9 +107,15 @@ pub fn run() {
                 };
 
                 if has_active {
+                    // Prevent default close, emit event so the frontend can show
+                    // a confirmation dialog.  The frontend must confirm via
+                    // `app.exit(0)` (or Tauri dialog) once the user decides.
+                    // When confirmed, the frontend calls `kill_active_child` via
+                    // an IPC command before calling `app.exit(0)`.
                     api.prevent_close();
                     let _ = app_handle.emit("close-requested-while-processing", ());
                 }
+                // Idle case: default close event proceeds — window closes normally.
             }
         });
 }
